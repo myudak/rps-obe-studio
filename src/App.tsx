@@ -1,10 +1,11 @@
 import { useMemo, useRef, useState } from "react"
 import {
   Bot, CalendarDays, Check, CheckCircle2, ChevronLeft, ChevronRight, CircleAlert,
-  ClipboardCheck, Download, FileJson, FileText, GraduationCap, KeyRound, Loader2,
+  ClipboardCheck, Download, FileJson, FileText, KeyRound, Loader2,
   RotateCcw, Save, Settings2, Sparkles, Target, Upload, WandSparkles,
 } from "lucide-react"
 
+import undipLogo from "@/assets/logo-undip.png?inline"
 import { DocumentPreview } from "@/components/rps/document-preview"
 import { AssessmentSection, FinalSection, IdentitySection, OutcomesSection, ScheduleSection } from "@/components/rps/editor-sections"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
@@ -140,7 +141,7 @@ function App() {
 
   return <div className="min-h-svh bg-[#f4f7f9] text-foreground">
     <header className="app-header no-print">
-      <div className="flex min-w-0 items-center gap-3"><div className="grid size-10 shrink-0 place-items-center rounded-2xl bg-primary text-primary-foreground shadow-sm"><GraduationCap className="size-5" /></div><div className="min-w-0"><div className="truncate font-heading text-sm font-semibold">RPS OBE Studio UNDIP</div><div className="truncate text-xs text-muted-foreground">FSM · Informatika · autosave lokal</div></div></div>
+      <div className="flex min-w-0 items-center gap-3"><img className="size-10 shrink-0 object-contain" src={undipLogo} alt="Logo Universitas Diponegoro" /><div className="min-w-0"><div className="truncate font-heading text-sm font-semibold">RPS OBE Studio UNDIP</div><div className="truncate text-xs text-muted-foreground">FSM · Informatika · autosave lokal</div></div></div>
       <div className="ml-auto flex items-center gap-2"><Badge className="hidden sm:inline-flex" variant="outline">{completion}% lengkap</Badge><Button size="sm" variant="outline" onClick={() => setSettingsOpen(true)}><Settings2 />AI & Model</Button><Button size="sm" onClick={() => exportHtml(data)}><Download />Export HTML</Button></div>
     </header>
     <div className="app-layout">

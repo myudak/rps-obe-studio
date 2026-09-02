@@ -5,6 +5,7 @@ import {
   RotateCcw, Save, Settings2, Upload,
 } from "lucide-react"
 
+import undipLogo from "@/assets/logo-undip.png?inline"
 import { AiChatPanel } from "@/components/ai/chat-panel"
 import { DocumentPreview } from "@/components/rps/document-preview"
 import { AssessmentSection, FinalSection, IdentitySection, OutcomesSection, ScheduleSection } from "@/components/rps/editor-sections"
@@ -289,7 +290,7 @@ function AppV2() {
 
   return <div className="min-h-svh bg-[#f4f7f9] text-foreground">
     <header className="app-header no-print">
-      <div className="app-brand"><div className="brand-mark">RPS</div><div className="min-w-0"><div className="truncate font-heading text-sm font-semibold">RPS OBE Studio UNDIP</div><div className="truncate text-xs text-muted-foreground">FSM · Informatika</div></div></div>
+      <div className="app-brand"><img className="brand-logo" src={undipLogo} alt="Logo Universitas Diponegoro" /><div className="min-w-0"><div className="truncate font-heading text-sm font-semibold">RPS OBE Studio UNDIP</div><div className="truncate text-xs text-muted-foreground">FSM · Informatika</div></div></div>
       <div className="ml-auto flex items-center gap-2"><span className="header-save-status">{persistence.status === "saving" ? <Loader2 className="animate-spin" /> : <HardDrive />}{persistenceLabel}</span><Button className="mobile-chat-trigger" size="sm" variant="outline" onClick={() => setChatOpen(true)}><MessageCircle />AI Chat</Button><Button className="settings-button" size="sm" variant="outline" onClick={() => setSettingsOpen(true)}><Settings2 />AI & Model</Button><Button className="desktop-export-button" size="sm" onClick={() => exportImprovedHtml(data)}><Download />Export HTML</Button></div>
     </header>
     <div className="app-layout">

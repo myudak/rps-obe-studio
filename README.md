@@ -1,3 +1,7 @@
+<p align="center"><img src="src/assets/logo-undip.png" alt="Logo Universitas Diponegoro" width="110"></p>
+
+<p align="center"><a href="https://myudak.github.io/rps-obe-studio/">Buka aplikasi</a> · <a href="https://github.com/myudak/rps-obe-studio/actions">Status deployment</a></p>
+
 # RPS OBE Studio
 
 MVP editor Rencana Pembelajaran Semester berbasis OBE untuk Departemen Informatika, Fakultas Sains dan Matematika, Universitas Diponegoro. Aplikasi berjalan sepenuhnya di browser, menyimpan draft di perangkat, dapat meminta draft terstruktur dari model OpenRouter, lalu mengekspor dokumen RPS sebagai HTML mandiri.
