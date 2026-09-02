@@ -82,7 +82,7 @@ export async function fetchOpenRouterModels(apiKey: string): Promise<OpenRouterM
   if (!response.ok) throw new Error(`Gagal memuat model (${response.status}). Periksa API key atau koneksi.`)
   const json = await response.json() as { data?: OpenRouterModel[] }
   return (json.data ?? [])
-    .filter((model) => model.supported_parameters?.includes("structured_outputs") || model.supported_parameters?.includes("response_format"))
+    .filter((model) => model.supported_parameters?.includes("structured_outputs") || model.supported_parameters?.includes("response_format") || model.supported_parameters?.includes("tools"))
     .sort((left, right) => left.name.localeCompare(right.name))
 }
 

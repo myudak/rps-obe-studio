@@ -9,6 +9,27 @@ export type AiDraft = {
   warnings: string[]
 }
 
+export type ChatAction = {
+  type: "navigate"
+  target: string
+  label: string
+}
+
+export type AiChangeOperation = {
+  target: string
+  label: string
+  before: string | number | string[]
+  after: string | number | string[]
+}
+
+export type AiChangeProposal = {
+  id: string
+  summary: string
+  operations: AiChangeOperation[]
+  state: "pending" | "applied" | "discarded"
+  sourceUpdatedAt: string
+}
+
 export type ChatRetry =
   | { kind: "chat"; prompt: string }
   | { kind: "task"; task: AiTask }
@@ -22,6 +43,8 @@ export type ChatMessage = {
   model?: string
   draft?: AiDraft
   draftState?: "pending" | "applied" | "discarded"
+  actions?: ChatAction[]
+  proposals?: AiChangeProposal[]
   sourceUpdatedAt?: string
   error?: string
   retry?: ChatRetry

@@ -8,14 +8,15 @@ export type ValidationIssue = {
   step: StepId
   title: string
   detail: string
+  target?: string
 }
 
 const sum = (values: number[]) => values.reduce((total, value) => total + (Number(value) || 0), 0)
 
 export function validateRps(data: RpsData): ValidationIssue[] {
   const issues: ValidationIssue[] = []
-  const add = (level: IssueLevel, step: StepId, id: string, title: string, detail: string) => {
-    issues.push({ level, step, id, title, detail })
+  const add = (level: IssueLevel, step: StepId, id: string, title: string, detail: string, target?: string) => {
+    issues.push({ level, step, id, title, detail, target })
   }
 
   const requiredMeta = ["institution", "faculty", "program", "courseName", "code", "kbk", "review", "descriptionId"] as const
@@ -26,49 +27,52 @@ export function validateRps(data: RpsData): ValidationIssue[] {
     "identity",
     missingMeta.length ? "Identitas belum lengkap" : "Identitas RPS lengkap",
     missingMeta.length ? `Kosong: ${missingMeta.join(", ")}` : "Header dan deskripsi utama tersedia.",
+    `meta.${missingMeta[0] ?? "courseName"}`,
   )
 
   const activeCpl = data.cpl.filter((item) => item.description.trim())
-  add(activeCpl.length ? "pass" : "error", "outcomes", "cpl", activeCpl.length ? "CPL tersedia" : "CPL kosong", activeCpl.length ? `${activeCpl.length} CPL aktif.` : "Isi minimal satu CPL resmi program studi.")
+  add(activeCpl.length ? "pass" : "error", "outcomes", "cpl", activeCpl.length ? "CPL tersedia" : "CPL kosong", activeCpl.length ? `${activeCpl.length} CPL aktif.` : "Isi minimal satu CPL resmi program studi.", "cpl.a.description")
 
   const emptyCpmk = data.cpmk.filter((item) => !item.text.trim())
-  add(emptyCpmk.length ? "error" : "pass", "outcomes", "cpmk", emptyCpmk.length ? "CPMK belum lengkap" : "CPMK lengkap", emptyCpmk.length ? `${emptyCpmk.length} CPMK masih kosong.` : `${data.cpmk.length} CPMK telah dirumuskan.`)
+  add(emptyCpmk.length ? "error" : "pass", "outcomes", "cpmk", emptyCpmk.length ? "CPMK belum lengkap" : "CPMK lengkap", emptyCpmk.length ? `${emptyCpmk.length} CPMK masih kosong.` : `${data.cpmk.length} CPMK telah dirumuskan.`, `cpmk.${Math.max(1, data.cpmk.indexOf(emptyCpmk[0]) + 1)}.text`)
 
   const noMapping = data.cpmk.filter((item) => !CPL_KEYS.some((key) => item.maps[key] > 0))
-  add(noMapping.length ? "error" : "pass", "outcomes", "mapping", noMapping.length ? "Mapping CPL belum lengkap" : "Mapping CPL–CPMK lengkap", noMapping.length ? noMapping.map((item) => item.code).join(", ") : "Setiap CPMK memiliki kontribusi CPL.")
+  add(noMapping.length ? "error" : "pass", "outcomes", "mapping", noMapping.length ? "Mapping CPL belum lengkap" : "Mapping CPL–CPMK lengkap", noMapping.length ? noMapping.map((item) => item.code).join(", ") : "Setiap CPMK memiliki kontribusi CPL.", `cpmk.${Math.max(1, data.cpmk.indexOf(noMapping[0]) + 1)}.maps.a`)
 
   const unknownBloom = data.cpmk.filter((item) => item.text.trim() && detectBloom(item.text) === "?")
-  add(unknownBloom.length ? "warning" : "pass", "outcomes", "bloom", unknownBloom.length ? "Kata kerja Bloom belum dikenali" : "Kata kerja terukur", unknownBloom.length ? unknownBloom.map((item) => item.code).join(", ") : "Semua rumusan memakai kata kerja yang dikenali.")
+  add(unknownBloom.length ? "warning" : "pass", "outcomes", "bloom", unknownBloom.length ? "Kata kerja Bloom belum dikenali" : "Kata kerja terukur", unknownBloom.length ? unknownBloom.map((item) => item.code).join(", ") : "Semua rumusan memakai kata kerja yang dikenali.", `cpmk.${Math.max(1, data.cpmk.indexOf(unknownBloom[0]) + 1)}.text`)
 
   const cpmkWeight = sum(data.cpmk.map((item) => item.weight))
-  add(Math.abs(cpmkWeight - 100) > 0.01 ? "error" : "pass", "outcomes", "cpmk-weight", `Bobot CPMK ${cpmkWeight}%`, Math.abs(cpmkWeight - 100) > 0.01 ? "Total wajib 100%." : "Total bobot konsisten.")
+  add(Math.abs(cpmkWeight - 100) > 0.01 ? "error" : "pass", "outcomes", "cpmk-weight", `Bobot CPMK ${cpmkWeight}%`, Math.abs(cpmkWeight - 100) > 0.01 ? "Total wajib 100%." : "Total bobot konsisten.", "cpmk.1.weight")
 
   const scheduleMissing = data.schedule.filter((item) => ![8, 16].includes(item.week) && (!item.topic.trim() || !item.outcome.trim() || !item.method.trim() || !item.assessment.trim()))
-  add(scheduleMissing.length ? "warning" : "pass", "schedule", "schedule", scheduleMissing.length ? "Jadwal belum lengkap" : "Jadwal 16 minggu lengkap", scheduleMissing.length ? `${scheduleMissing.length} minggu masih membutuhkan topik, outcome, metode, atau assessment.` : "Termasuk UTS dan UAS.")
+  const firstMissingWeek = scheduleMissing[0]?.week ?? 1
+  add(scheduleMissing.length ? "warning" : "pass", "schedule", "schedule", scheduleMissing.length ? "Jadwal belum lengkap" : "Jadwal 16 minggu lengkap", scheduleMissing.length ? `${scheduleMissing.length} minggu masih membutuhkan topik, outcome, metode, atau assessment.` : "Termasuk UTS dan UAS.", `schedule.${firstMissingWeek}.topic`)
 
   const validWeeks = new Set(data.schedule.map((item) => item.week)).size === 16 && data.schedule.some((item) => item.week === 8 && item.assessment.toUpperCase().includes("UTS")) && data.schedule.some((item) => item.week === 16 && item.assessment.toUpperCase().includes("UAS"))
   add(validWeeks ? "pass" : "error", "schedule", "schedule-weeks", validWeeks ? "Struktur semester valid" : "Struktur minggu tidak valid", validWeeks ? "Minggu 1–16 unik, termasuk UTS dan UAS." : "Pastikan minggu 1–16 unik, minggu 8 memuat UTS, dan minggu 16 memuat UAS.")
 
   const assessmentWeight = sum(data.assessments.map((item) => item.weight))
-  add(Math.abs(assessmentWeight - 100) > 0.01 ? "error" : "pass", "assessment", "assessment-weight", `Bobot assessment ${assessmentWeight}%`, Math.abs(assessmentWeight - 100) > 0.01 ? "Total wajib 100%." : "Total bobot konsisten.")
+  add(Math.abs(assessmentWeight - 100) > 0.01 ? "error" : "pass", "assessment", "assessment-weight", `Bobot assessment ${assessmentWeight}%`, Math.abs(assessmentWeight - 100) > 0.01 ? "Total wajib 100%." : "Total bobot konsisten.", "assessment.1.weight")
 
   const unmappedAssessment = data.assessments.filter((item) => !item.cpmk.length)
-  add(unmappedAssessment.length ? "error" : "pass", "assessment", "assessment-map", unmappedAssessment.length ? "Assessment belum dipetakan" : "Assessment–CPMK terpetakan", unmappedAssessment.length ? unmappedAssessment.map((item) => item.name).join(", ") : "Semua assessment memiliki outcome.")
+  add(unmappedAssessment.length ? "error" : "pass", "assessment", "assessment-map", unmappedAssessment.length ? "Assessment belum dipetakan" : "Assessment–CPMK terpetakan", unmappedAssessment.length ? unmappedAssessment.map((item) => item.name).join(", ") : "Semua assessment memiliki outcome.", `assessment.${Math.max(1, data.assessments.indexOf(unmappedAssessment[0]) + 1)}.cpmk`)
 
   const unmeasuredCpmk = data.cpmk.filter((cpmk) => !data.assessments.some((assessment) => assessment.cpmk.includes(cpmk.code)))
   add(unmeasuredCpmk.length ? "error" : "pass", "assessment", "cpmk-coverage", unmeasuredCpmk.length ? "Ada CPMK yang belum diukur" : "Semua CPMK terukur", unmeasuredCpmk.length ? unmeasuredCpmk.map((item) => item.code).join(", ") : "Setiap CPMK terhubung ke minimal satu assessment.")
 
   const incompleteRubric = data.rubrics.filter((item) => !item.level4.trim() || !item.level3.trim() || !item.level2.trim() || !item.level1.trim())
-  add(incompleteRubric.length ? "warning" : "pass", "assessment", "rubric", incompleteRubric.length ? "Rubrik belum lengkap" : "Rubrik analitik lengkap", incompleteRubric.length ? `${incompleteRubric.length} kriteria belum memiliki seluruh deskriptor.` : "Seluruh level 4–1 terdefinisi.")
+  add(incompleteRubric.length ? "warning" : "pass", "assessment", "rubric", incompleteRubric.length ? "Rubrik belum lengkap" : "Rubrik analitik lengkap", incompleteRubric.length ? `${incompleteRubric.length} kriteria belum memiliki seluruh deskriptor.` : "Seluruh level 4–1 terdefinisi.", `rubric.${Math.max(1, data.rubrics.indexOf(incompleteRubric[0]) + 1)}.level4`)
 
   const rubricWeight = sum(data.rubrics.map((item) => item.weight))
   add(Math.abs(rubricWeight - 100) > 0.01 ? "error" : "pass", "assessment", "rubric-weight", `Bobot rubrik ${rubricWeight}%`, Math.abs(rubricWeight - 100) > 0.01 ? "Total wajib 100%." : "Total bobot konsisten.")
 
   const referenceCount = [...data.references.main, ...data.references.additional].filter((item) => item.trim()).length
-  add(referenceCount < 2 ? "warning" : "pass", "identity", "references", referenceCount < 2 ? "Referensi masih minim" : "Referensi tersedia", `${referenceCount} referensi tercatat; tetap verifikasi sumber secara manual.`)
+  add(referenceCount < 2 ? "warning" : "pass", "identity", "references", referenceCount < 2 ? "Referensi masih minim" : "Referensi tersedia", `${referenceCount} referensi tercatat; tetap verifikasi sumber secara manual.`, "references.main.1")
 
   const missingValidator = [data.validation.author, data.validation.coordinator, data.validation.head].filter((item) => !item.trim()).length
-  add(missingValidator ? "error" : "pass", "final", "validator", missingValidator ? "Validator belum lengkap" : "Validator lengkap", missingValidator ? "Penyusun, koordinator, dan ketua program studi wajib diisi." : "Tiga peran validasi tersedia.")
+  const validatorTarget = !data.validation.author.trim() ? "validation.author" : !data.validation.coordinator.trim() ? "validation.coordinator" : "validation.head"
+  add(missingValidator ? "error" : "pass", "final", "validator", missingValidator ? "Validator belum lengkap" : "Validator lengkap", missingValidator ? "Penyusun, koordinator, dan ketua program studi wajib diisi." : "Tiga peran validasi tersedia.", validatorTarget)
   return issues
 }
 

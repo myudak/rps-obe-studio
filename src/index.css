@@ -127,6 +127,7 @@
 .app-main { min-width: 0; padding: 24px clamp(18px, 3vw, 40px) 36px; }
 .app-inspector { position: sticky; top: 60px; height: calc(100svh - 60px); overflow-y: auto; border-left: 1px solid var(--border); padding: 20px 14px; }
 .editor-section { margin-inline: auto; max-width: 1120px; }
+.editor-target-highlight { outline: 3px solid color-mix(in oklch, var(--primary) 30%, transparent) !important; outline-offset: 3px; transition: outline-color .2s ease; }
 
 .step-button {
   display: flex;

@@ -21,11 +21,13 @@ import { Progress } from "@/components/ui/progress"
 import { Separator } from "@/components/ui/separator"
 import { useAppPersistence } from "@/hooks/use-app-persistence"
 import { createChatId, type AiTask, type ChatMessage, type ChatRetry } from "@/lib/ai-types"
+import { applyAiChangeProposal } from "@/lib/ai-tools"
 import {
   clearSessionApiKey, forgetEncryptedApiKey, hasEncryptedApiKey, isWebCryptoAvailable,
   readSessionApiKey, saveEncryptedApiKey, unlockEncryptedApiKey, writeSessionApiKey,
 } from "@/lib/credential-vault"
 import { exportDocx, exportJson } from "@/lib/export"
+import { getEditorTarget } from "@/lib/editor-targets"
 import { exportImprovedHtml } from "@/lib/html-export"
 import { streamAiChat } from "@/lib/openrouter-chat"
 import { applyAiDraft, fetchOpenRouterModels, generateAiDraft, type OpenRouterModel } from "@/lib/openrouter"
@@ -87,7 +89,7 @@ function AiSettingsDialog({ open, onOpenChange, apiKey, onApiKeyChange, storageM
       setModels(result)
       await putCachedModels(result)
       if (!selectedModel && result[0]) setSelectedModel(result[0].id)
-      setMessage(`${result.length} model yang dapat dipakai untuk chat dan draft terstruktur ditemukan.`)
+      setMessage(`${result.length} model yang kompatibel untuk chat, tools, atau draft terstruktur ditemukan.`)
     } catch (error) { setMessage(error instanceof Error ? error.message : "Gagal memuat model.") }
     finally { setIsLoading(false) }
   }
@@ -107,7 +109,7 @@ function AiSettingsDialog({ open, onOpenChange, apiKey, onApiKeyChange, storageM
         {storageMode === "encrypted" && <div className="border-l-2 border-primary bg-muted/30 p-4"><div className="flex items-center gap-2 text-sm font-semibold"><LockKeyhole className="size-4 text-primary" />Vault OpenRouter</div><p className="mt-1 text-xs leading-relaxed text-muted-foreground">AES-256-GCM · PBKDF2-SHA256 · 600.000 iterasi. PIN minimal 6 karakter dan harus dimasukkan lagi setelah reload.</p><div className="mt-3 flex gap-2"><Input type="password" autoComplete="off" value={pin} placeholder="PIN / passphrase" onChange={(event) => setPin(event.target.value)} /><Button variant="outline" disabled={vaultBusy || !pin} onClick={() => void vaultAction(() => hasEncryptedKey && !apiKey ? onUnlock(pin) : onSaveEncrypted(pin), hasEncryptedKey && !apiKey ? "API key berhasil dibuka untuk sesi ini." : "API key berhasil disimpan terenkripsi.")}>{vaultBusy ? <Loader2 className="animate-spin" /> : <LockKeyhole />}{hasEncryptedKey && !apiKey ? "Buka" : "Simpan"}</Button></div>{vaultMessage && <p className="mt-2 text-xs text-muted-foreground">{vaultMessage}</p>}{hasEncryptedKey && <Button className="mt-3" size="sm" variant="ghost" onClick={() => void vaultAction(onForgetEncrypted, "Credential tersimpan telah dihapus.")} disabled={vaultBusy}>Lupakan API key tersimpan</Button>}</div>}
         <Separator />
         <div className="space-y-2"><Label htmlFor="model-id">Model ID</Label><Input id="model-id" list="openrouter-models" value={selectedModel} placeholder="provider/model" onChange={(event) => setSelectedModel(event.target.value)} /><datalist id="openrouter-models">{models.map((model) => <option key={model.id} value={model.id}>{model.name}</option>)}</datalist><p className="text-xs text-muted-foreground">Default: z-ai/glm-5.3-flash. Anda tetap dapat mengetik slug OpenRouter lain.</p></div>
-        {selected && <div className="border-l-2 border-primary bg-muted/30 p-4"><div className="flex items-start justify-between gap-4"><div><div className="font-medium">{selected.name}</div><div className="mt-1 line-clamp-2 text-xs text-muted-foreground">{selected.description}</div></div><Badge variant="secondary">{Math.round(selected.context_length / 1000)}K</Badge></div><div className="mt-3 flex gap-4 text-xs text-muted-foreground"><span>Input {pricePerMillion(selected.pricing?.prompt)}/M</span><span>Output {pricePerMillion(selected.pricing?.completion)}/M</span></div></div>}
+        {selected && <div className="border-l-2 border-primary bg-muted/30 p-4"><div className="flex items-start justify-between gap-4"><div><div className="font-medium">{selected.name}</div><div className="mt-1 line-clamp-2 text-xs text-muted-foreground">{selected.description}</div></div><div className="flex gap-1"><Badge variant="secondary">{Math.round(selected.context_length / 1000)}K</Badge><Badge variant={selected.supported_parameters?.includes("tools") ? "default" : "outline"}>{selected.supported_parameters?.includes("tools") ? "Tools" : "Chat saja"}</Badge></div></div><div className="mt-3 flex gap-4 text-xs text-muted-foreground"><span>Input {pricePerMillion(selected.pricing?.prompt)}/M</span><span>Output {pricePerMillion(selected.pricing?.completion)}/M</span></div></div>}
         <div className="space-y-2"><div className="flex items-center justify-between"><Label htmlFor="temperature">Temperature</Label><Badge variant="outline">{temperature.toFixed(1)}</Badge></div><input id="temperature" className="w-full accent-[var(--primary)]" type="range" min="0" max="1" step="0.1" value={temperature} onChange={(event) => setTemperature(Number(event.target.value))} /></div>
         {message && <Alert><Bot /><AlertTitle>Status koneksi</AlertTitle><AlertDescription>{message}</AlertDescription></Alert>}
       </div>
@@ -132,12 +134,15 @@ function AppV2() {
   const [busyLabel, setBusyLabel] = useState("")
   const [streamingContent, setStreamingContent] = useState("")
   const [notice, setNotice] = useState("")
+  const [pendingTarget, setPendingTarget] = useState("")
   const fileInputRef = useRef<HTMLInputElement>(null)
   const abortRef = useRef<AbortController | null>(null)
   const issues = useMemo(() => validateRps(data), [data])
   const completion = useMemo(() => overallCompletion(data), [data])
   const currentIndex = STEPS.indexOf(activeStep)
   const connected = Boolean(apiKey.trim() && selectedModel.trim())
+  const selectedModelMetadata = models.find((model) => model.id === selectedModel)
+  const toolsAvailable = selectedModelMetadata ? selectedModelMetadata.supported_parameters?.includes("tools") ?? false : true
 
   useEffect(() => {
     if (!persistence.hydrated || apiKeyStorageMode !== "session") return
@@ -153,6 +158,24 @@ function AppV2() {
     void hasEncryptedApiKey().then(setHasEncryptedKey).catch(() => setHasEncryptedKey(false))
     void getCachedModels<OpenRouterModel[]>().then((cached) => { if (cached?.length) setModels(cached) }).catch(() => undefined)
   }, [persistence.hydrated])
+
+  useEffect(() => {
+    if (!pendingTarget) return
+    const definition = getEditorTarget(pendingTarget)
+    if (!definition || definition.step !== activeStep) return
+    let innerFrame = 0
+    const frame = requestAnimationFrame(() => { innerFrame = requestAnimationFrame(() => {
+      const element = Array.from(document.querySelectorAll<HTMLElement>("[data-editor-target]")).find((candidate) => candidate.dataset.editorTarget === pendingTarget)
+      if (!element) return
+      element.scrollIntoView({ behavior: "smooth", block: "center", inline: "center" })
+      if (element.matches("input, textarea, select, button")) element.focus({ preventScroll: true })
+      else element.querySelector<HTMLElement>("input, textarea, select, button")?.focus({ preventScroll: true })
+      element.classList.add("editor-target-highlight")
+      window.setTimeout(() => element.classList.remove("editor-target-highlight"), 1800)
+      setPendingTarget("")
+    }) })
+    return () => { cancelAnimationFrame(frame); if (innerFrame) cancelAnimationFrame(innerFrame) }
+  }, [activeStep, pendingTarget])
 
   const handleApiKeyChange = (value: string) => {
     setApiKey(value)
@@ -206,6 +229,14 @@ function AppV2() {
     if (window.matchMedia("(max-width: 1120px)").matches) setChatOpen(true)
   }
 
+  const navigateToTarget = (target: string) => {
+    const definition = getEditorTarget(target)
+    if (!definition) { setNotice("Tujuan editor tidak dikenali."); return }
+    setChatOpen(false)
+    setPendingTarget(target)
+    setActiveStep(definition.step)
+  }
+
   const sendChat = async (prompt: string) => {
     if (!requireConnection() || busyLabel) return
     revealChat()
@@ -217,9 +248,10 @@ function AppV2() {
     setStreamingContent("")
     let streamed = ""
     try {
-      await streamAiChat({ apiKey, model: selectedModel, temperature, prompt, history: messages, data, activeStep, signal: controller.signal, onDelta: (text) => { streamed += text; setStreamingContent(streamed) } })
-      if (!streamed.trim()) throw new Error("Model menyelesaikan stream tanpa konten.")
-      appendMessage({ id: createChatId(), role: "assistant", content: streamed, createdAt: new Date().toISOString(), status: "done", model: selectedModel })
+      const result = await streamAiChat({ apiKey, model: selectedModel, temperature, prompt, history: messages, data, activeStep, supportsTools: toolsAvailable, signal: controller.signal, onDelta: (text) => { streamed += text; setStreamingContent(streamed) } })
+      const finalContent = result.content || (result.actions.length || result.proposals.length ? "Aksi sudah disiapkan untuk ditinjau." : "")
+      if (!finalContent.trim()) throw new Error("Model menyelesaikan stream tanpa konten.")
+      appendMessage({ id: createChatId(), role: "assistant", content: finalContent, actions: result.actions, proposals: result.proposals, createdAt: new Date().toISOString(), status: "done", model: selectedModel })
     } catch (error) {
       if (controller.signal.aborted) {
         if (streamed.trim()) appendMessage({ id: createChatId(), role: "assistant", content: streamed, createdAt: new Date().toISOString(), status: "cancelled", model: selectedModel })
@@ -268,6 +300,24 @@ function AppV2() {
     setNotice(`${message.draft.label} diterapkan. Periksa kembali perubahan sebelum finalisasi.`)
   }
 
+  const applyProposal = (messageId: string, proposalId: string) => {
+    const message = messages.find((item) => item.id === messageId)
+    const proposal = message?.proposals?.find((item) => item.id === proposalId)
+    if (!message || !proposal || proposal.state !== "pending") return
+    const result = applyAiChangeProposal(data, proposal)
+    if (!result.ok) { setNotice(result.error); return }
+    setData(result.data)
+    updateMessage(messageId, { proposals: message.proposals?.map((item) => item.id === proposalId ? { ...item, state: "applied" as const } : item) })
+    setNotice(`${proposal.operations.length} perubahan diterapkan. Periksa kembali sebelum finalisasi.`)
+    navigateToTarget(proposal.operations[0].target)
+  }
+
+  const discardProposal = (messageId: string, proposalId: string) => {
+    const message = messages.find((item) => item.id === messageId)
+    if (!message?.proposals) return
+    updateMessage(messageId, { proposals: message.proposals.map((item) => item.id === proposalId ? { ...item, state: "discarded" as const } : item) })
+  }
+
   const retry = (value: ChatRetry) => value.kind === "chat" ? void sendChat(value.prompt) : void runAi(value.task)
   const clearConversation = () => {
     if (messages.length && window.confirm("Hapus seluruh riwayat chat untuk RPS ini?")) clearMessages()
@@ -285,7 +335,7 @@ function AppV2() {
   const loadExample = () => { store.loadExample(); clearMessages(); setNotice("Contoh Dasar Programming dimuat. Riwayat chat sebelumnya dibersihkan.") }
   const go = (direction: -1 | 1) => setActiveStep(STEPS[Math.max(0, Math.min(STEPS.length - 1, currentIndex + direction))])
   const section = activeStep === "identity" ? <IdentitySection onAi={runAi} /> : activeStep === "outcomes" ? <OutcomesSection onAi={runAi} /> : activeStep === "schedule" ? <ScheduleSection onAi={runAi} /> : activeStep === "assessment" ? <AssessmentSection onAi={runAi} /> : <FinalSection onAi={runAi} />
-  const chatPanel = <AiChatPanel messages={messages} streamingContent={streamingContent} busyLabel={busyLabel} connected={connected} model={selectedModel} currentUpdatedAt={data.updatedAt} issues={issues} onSend={(prompt) => void sendChat(prompt)} onTask={(task) => void runAi(task)} onCancel={() => abortRef.current?.abort()} onSettings={() => setSettingsOpen(true)} onClear={clearConversation} onApply={applyDraftMessage} onDiscard={(id) => updateMessage(id, { draftState: "discarded" })} onRetry={retry} onIssueSelect={(step) => { setActiveStep(step); setChatOpen(false) }} />
+  const chatPanel = <AiChatPanel messages={messages} streamingContent={streamingContent} busyLabel={busyLabel} connected={connected} model={selectedModel} toolsAvailable={toolsAvailable} currentUpdatedAt={data.updatedAt} issues={issues} onSend={(prompt) => void sendChat(prompt)} onTask={(task) => void runAi(task)} onCancel={() => abortRef.current?.abort()} onSettings={() => setSettingsOpen(true)} onClear={clearConversation} onApply={applyDraftMessage} onDiscard={(id) => updateMessage(id, { draftState: "discarded" })} onApplyProposal={applyProposal} onDiscardProposal={discardProposal} onNavigate={navigateToTarget} onRetry={retry} onIssueSelect={(step, target) => { if (target) navigateToTarget(target); else { setActiveStep(step); setChatOpen(false) } }} />
   const persistenceLabel = persistence.status === "saving" ? "Menyimpan…" : persistence.status === "saved" ? "Tersimpan" : persistence.status === "loading" ? "Memuat…" : "Storage bermasalah"
 
   return <div className="min-h-svh bg-[#f4f7f9] text-foreground">

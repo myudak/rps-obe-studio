@@ -16,6 +16,9 @@ Repository: https://github.com/myudak/rps-obe-studio
 - `src/main.tsx` mounts `src/AppV2.tsx`. `src/App.tsx` is a legacy implementation and is not the active entrypoint.
 - `src/components/rps/editor-sections.tsx` contains the five-step editor.
 - `src/components/ai/chat-panel.tsx` contains streaming chat, structured drafts, retries, stale-draft protection, and quality-check navigation.
+- `src/lib/editor-targets.ts` is the canonical registry for trusted editor destinations, labels, steps, and value types. UI fields use matching `data-editor-target` attributes.
+- `src/lib/ai-tools.ts` defines the OpenRouter chat tools and validates review-before-apply field changes. Never let a model write directly to the RPS store.
+- `src/lib/openrouter-chat.ts` assembles streamed tool calls and falls back to text chat when a provider rejects tools.
 - `src/stores/rps-store.ts` and `src/stores/chat-store.ts` own application state.
 - `src/hooks/use-app-persistence.ts` coordinates IndexedDB hydration and autosave.
 - `src/lib/export.ts` and `src/lib/html-export.ts` generate downloadable documents.
@@ -48,6 +51,8 @@ npm run build
 - RPS data and chat may be backed up, but credentials must never be included in exports or backups.
 - OpenRouter keys support memory, session storage, or an encrypted local vault. Never hardcode, log, commit, or transmit a real API key outside the existing request flow.
 - AI-generated structured drafts require explicit user approval before modifying form data. Preserve stale-draft detection and cancellation behavior.
+- AI field changes are persisted as proposal cards and require explicit approval. Navigation actions may change the active step and focus a field, but must not mutate RPS data.
+- Keep editor target IDs stable because saved chat actions and proposals may reference them after reload.
 - Keep validation deterministic and separate from model output.
 
 ## Design direction

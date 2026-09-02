@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react"
 import {
-  Check, ChevronDown, CircleAlert, Loader2, RefreshCw,
+  ArrowRight, Check, ChevronDown, CircleAlert, FilePenLine, Loader2, RefreshCw,
   Send, Settings2, Square, Trash2, X,
 } from "lucide-react"
 import ReactMarkdown from "react-markdown"
@@ -9,7 +9,7 @@ import remarkGfm from "remark-gfm"
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import type { AiDraft, AiTask, ChatMessage, ChatRetry } from "@/lib/ai-types"
+import type { AiChangeProposal, AiDraft, AiTask, ChatMessage, ChatRetry } from "@/lib/ai-types"
 import type { ValidationIssue } from "@/lib/validation"
 import type { StepId } from "@/stores/rps-store"
 
@@ -64,11 +64,36 @@ function DraftCard({ message, currentUpdatedAt, onApply, onDiscard }: {
   </div>
 }
 
-function MessageBubble({ message, currentUpdatedAt, onApply, onDiscard, onRetry }: {
+function displayValue(value: string | number | string[]) {
+  if (Array.isArray(value)) return value.length ? value.join(", ") : "— kosong —"
+  if (typeof value === "string") return value.trim() || "— kosong —"
+  return String(value)
+}
+
+function ChangeProposalCard({ proposal, currentUpdatedAt, onApply, onDiscard, onNavigate }: {
+  proposal: AiChangeProposal
+  currentUpdatedAt: string
+  onApply: (proposalId: string) => void
+  onDiscard: (proposalId: string) => void
+  onNavigate: (target: string) => void
+}) {
+  const stale = proposal.state === "pending" && proposal.sourceUpdatedAt !== currentUpdatedAt
+  return <div className={`ai-change-card ${proposal.state !== "pending" ? "opacity-70" : ""}`}>
+    <div className="flex items-start justify-between gap-3"><div><p className="text-xs font-semibold">{proposal.summary}</p><p className="mt-0.5 text-[10px] text-muted-foreground">{proposal.operations.length} perubahan · {proposal.state === "pending" ? "belum diterapkan" : proposal.state === "applied" ? "sudah diterapkan" : "ditolak"}</p></div>{proposal.state === "applied" ? <Badge><Check />Diterapkan</Badge> : proposal.state === "discarded" ? <Badge variant="outline"><X />Ditolak</Badge> : <Badge variant="secondary"><FilePenLine />Usulan</Badge>}</div>
+    <div className="mt-3 space-y-2">{proposal.operations.map((operation) => <button className="change-operation" type="button" key={operation.target} onClick={() => onNavigate(operation.target)}><span className="change-operation-label">{operation.label}<ArrowRight /></span><span className="change-before">{displayValue(operation.before)}</span><span className="change-after">{displayValue(operation.after)}</span></button>)}</div>
+    {stale && <Alert className="mt-3" variant="destructive"><CircleAlert /><AlertTitle>Usulan sudah kedaluwarsa</AlertTitle><AlertDescription>Isi RPS berubah setelah usulan dibuat. Minta usulan baru agar data terbaru tidak tertimpa.</AlertDescription></Alert>}
+    {proposal.state === "pending" && <div className="mt-3 flex gap-2"><Button size="sm" disabled={stale} onClick={() => onApply(proposal.id)}><Check />Terapkan</Button><Button size="sm" variant="outline" onClick={() => onDiscard(proposal.id)}>Tolak</Button></div>}
+  </div>
+}
+
+function MessageBubble({ message, currentUpdatedAt, onApply, onDiscard, onApplyProposal, onDiscardProposal, onNavigate, onRetry }: {
   message: ChatMessage
   currentUpdatedAt: string
   onApply: (id: string) => void
   onDiscard: (id: string) => void
+  onApplyProposal: (messageId: string, proposalId: string) => void
+  onDiscardProposal: (messageId: string, proposalId: string) => void
+  onNavigate: (target: string) => void
   onRetry: (retry: ChatRetry) => void
 }) {
   const assistant = message.role === "assistant"
@@ -77,17 +102,20 @@ function MessageBubble({ message, currentUpdatedAt, onApply, onDiscard, onRetry 
       {message.content && <div className={`ai-markdown ${assistant ? "" : "user-copy"}`}><ReactMarkdown remarkPlugins={[remarkGfm]} components={{ a: ({ ...props }) => <a {...props} target="_blank" rel="noreferrer noopener" /> }}>{message.content}</ReactMarkdown></div>}
       {message.error && <Alert className="mt-2" variant="destructive"><CircleAlert /><AlertTitle>Respons gagal</AlertTitle><AlertDescription>{message.error}</AlertDescription></Alert>}
       {message.retry && message.status === "error" && <Button className="mt-2" size="sm" variant="outline" onClick={() => onRetry(message.retry!)}><RefreshCw />Coba lagi</Button>}
+      {message.actions && message.actions.length > 0 && <div className="chat-actions">{message.actions.map((action) => <Button key={`${action.type}-${action.target}`} size="sm" variant="outline" onClick={() => onNavigate(action.target)}>{action.label}<ArrowRight /></Button>)}</div>}
+      {message.proposals?.map((proposal) => <ChangeProposalCard key={proposal.id} proposal={proposal} currentUpdatedAt={currentUpdatedAt} onApply={(proposalId) => onApplyProposal(message.id, proposalId)} onDiscard={(proposalId) => onDiscardProposal(message.id, proposalId)} onNavigate={onNavigate} />)}
       <DraftCard message={message} currentUpdatedAt={currentUpdatedAt} onApply={onApply} onDiscard={onDiscard} />
     </div>
   </article>
 }
 
-export function AiChatPanel({ messages, streamingContent, busyLabel, connected, model, currentUpdatedAt, issues, onSend, onTask, onCancel, onSettings, onClear, onApply, onDiscard, onRetry, onIssueSelect }: {
+export function AiChatPanel({ messages, streamingContent, busyLabel, connected, model, toolsAvailable, currentUpdatedAt, issues, onSend, onTask, onCancel, onSettings, onClear, onApply, onDiscard, onApplyProposal, onDiscardProposal, onNavigate, onRetry, onIssueSelect }: {
   messages: ChatMessage[]
   streamingContent: string
   busyLabel: string
   connected: boolean
   model: string
+  toolsAvailable: boolean
   currentUpdatedAt: string
   issues: ValidationIssue[]
   onSend: (prompt: string) => void
@@ -97,8 +125,11 @@ export function AiChatPanel({ messages, streamingContent, busyLabel, connected, 
   onClear: () => void
   onApply: (id: string) => void
   onDiscard: (id: string) => void
+  onApplyProposal: (messageId: string, proposalId: string) => void
+  onDiscardProposal: (messageId: string, proposalId: string) => void
+  onNavigate: (target: string) => void
   onRetry: (retry: ChatRetry) => void
-  onIssueSelect: (step: StepId) => void
+  onIssueSelect: (step: StepId, target?: string) => void
 }) {
   const [prompt, setPrompt] = useState("")
   const transcriptRef = useRef<HTMLDivElement>(null)
@@ -112,15 +143,15 @@ export function AiChatPanel({ messages, streamingContent, busyLabel, connected, 
     onSend(value)
   }
   return <section className="ai-chat-panel">
-    <header className="ai-chat-header"><div className="flex min-w-0 items-center gap-3"><div className="assistant-label">AI</div><div className="min-w-0"><h2>Asisten RPS</h2><p className="truncate">{connected ? model : "Hubungkan OpenRouter untuk mulai"}</p></div></div><div className="flex items-center gap-1"><Button size="icon-sm" variant="ghost" aria-label="Hapus percakapan" onClick={onClear} disabled={!messages.length || busy}><Trash2 /></Button><Button size="icon-sm" variant="ghost" aria-label="Pengaturan AI" onClick={onSettings}><Settings2 /></Button></div></header>
+    <header className="ai-chat-header"><div className="flex min-w-0 items-center gap-3"><div className="assistant-label">AI</div><div className="min-w-0"><h2>Asisten RPS</h2><p className="truncate">{connected ? model : "Hubungkan OpenRouter untuk mulai"}</p>{connected && <span className="tool-status">{toolsAvailable ? "Navigasi & usulan aktif" : "Chat teks saja"}</span>}</div></div><div className="flex items-center gap-1"><Button size="icon-sm" variant="ghost" aria-label="Hapus percakapan" onClick={onClear} disabled={!messages.length || busy}><Trash2 /></Button><Button size="icon-sm" variant="ghost" aria-label="Pengaturan AI" onClick={onSettings}><Settings2 /></Button></div></header>
     <div className="ai-transcript" ref={transcriptRef} aria-live="polite">
       {messages.length === 0 && !busy && <div className="ai-welcome"><h3>Diskusikan RPS sambil mengedit</h3><p>Tanyakan alignment OBE, kualitas CPMK, atau ide pembelajaran. Perubahan form tetap memerlukan persetujuan Anda.</p><div className="example-prompt"><b>Contoh</b><p>“Apakah CPMK saya sudah terukur dan selaras dengan assessment?”</p></div></div>}
-      {messages.map((message) => <MessageBubble key={message.id} message={message} currentUpdatedAt={currentUpdatedAt} onApply={onApply} onDiscard={onDiscard} onRetry={onRetry} />)}
+      {messages.map((message) => <MessageBubble key={message.id} message={message} currentUpdatedAt={currentUpdatedAt} onApply={onApply} onDiscard={onDiscard} onApplyProposal={onApplyProposal} onDiscardProposal={onDiscardProposal} onNavigate={onNavigate} onRetry={onRetry} />)}
       {busy && <article className="chat-message assistant"><div className="min-w-0 flex-1"><div className="mb-1.5 flex items-center gap-2"><span className="text-[11px] font-semibold">Asisten RPS</span><Badge variant="secondary"><Loader2 className="animate-spin" />{busyLabel}</Badge></div>{streamingContent ? <div className="ai-markdown"><ReactMarkdown remarkPlugins={[remarkGfm]}>{streamingContent}</ReactMarkdown><span className="typing-caret" /></div> : <div className="thinking-row"><span /><span /><span /></div>}</div></article>}
     </div>
     <div className="ai-composer-wrap"><div className="quick-actions" aria-label="Aksi draft AI">{QUICK_ACTIONS.map((action) => <button type="button" key={action.task} disabled={busy || !connected} onClick={() => onTask(action.task)}>{action.label}</button>)}</div>
       <div className="ai-composer"><textarea value={prompt} disabled={busy || !connected} rows={2} placeholder={connected ? "Tanyakan sesuatu tentang RPS ini…" : "Atur API key OpenRouter dahulu…"} onChange={(event) => setPrompt(event.target.value)} onKeyDown={(event) => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); submit() } }} /><div className="flex items-center justify-between gap-2"><span>Enter kirim · Shift+Enter baris baru</span>{busy ? <Button size="icon-sm" variant="destructive" onClick={onCancel} aria-label="Hentikan respons"><Square /></Button> : <Button size="icon-sm" onClick={submit} disabled={!prompt.trim() || !connected} aria-label="Kirim pesan"><Send /></Button>}</div></div>
-      <details className="quality-details"><summary><span><CircleAlert />Quality check</span><Badge variant={actionableIssues.some((issue) => issue.level === "error") ? "destructive" : "outline"}>{actionableIssues.length}</Badge><ChevronDown className="chevron" /></summary><div className="space-y-1 p-2">{actionableIssues.slice(0, 8).map((issue) => <button className="issue-row" key={issue.id} type="button" onClick={() => onIssueSelect(issue.step)}><CircleAlert className={issue.level === "error" ? "size-4 text-destructive" : "size-4 text-amber-600"} /><span><b>{issue.title}</b><small>{issue.detail}</small></span></button>)}{actionableIssues.length === 0 && <div className="border-l-2 border-primary px-3 py-2 text-xs text-primary">Semua pemeriksaan lulus.</div>}</div></details>
+      <details className="quality-details"><summary><span><CircleAlert />Quality check</span><Badge variant={actionableIssues.some((issue) => issue.level === "error") ? "destructive" : "outline"}>{actionableIssues.length}</Badge><ChevronDown className="chevron" /></summary><div className="space-y-1 p-2">{actionableIssues.slice(0, 8).map((issue) => <button className="issue-row" key={issue.id} type="button" onClick={() => onIssueSelect(issue.step, issue.target)}><CircleAlert className={issue.level === "error" ? "size-4 text-destructive" : "size-4 text-amber-600"} /><span><b>{issue.title}</b><small>{issue.detail}</small></span></button>)}{actionableIssues.length === 0 && <div className="border-l-2 border-primary px-3 py-2 text-xs text-primary">Semua pemeriksaan lulus.</div>}</div></details>
     </div>
   </section>
 }
