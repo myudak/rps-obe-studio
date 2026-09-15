@@ -1,5 +1,6 @@
-import { CPL_KEYS, detectBloom, type RpsData } from "@/schemas/rps-schema"
-import type { StepId } from "@/stores/rps-store"
+import { CPL_KEYS, detectBloom, type RpsData } from "../schemas/rps-schema.ts"
+
+type StepId = "identity" | "outcomes" | "schedule" | "assessment" | "final"
 
 export type IssueLevel = "pass" | "warning" | "error"
 export type ValidationIssue = {

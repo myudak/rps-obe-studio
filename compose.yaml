@@ -1,0 +1,19 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: rps_obe
+      POSTGRES_USER: rps_obe
+      POSTGRES_PASSWORD: rps_obe
+    ports:
+      - "5433:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rps_obe -d rps_obe"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    volumes:
+      - rps_obe_postgres:/var/lib/postgresql/data
+
+volumes:
+  rps_obe_postgres:

@@ -1,76 +1,122 @@
 <p align="center"><img src="src/assets/logo-undip.png" alt="Logo Universitas Diponegoro" width="110"></p>
 
-<p align="center"><a href="https://myudak.github.io/rps-obe-studio/">Buka aplikasi</a> · <a href="https://github.com/myudak/rps-obe-studio/actions">Status deployment</a></p>
-
 # RPS OBE Studio
 
-MVP editor Rencana Pembelajaran Semester berbasis OBE untuk Departemen Informatika, Fakultas Sains dan Matematika, Universitas Diponegoro. Aplikasi berjalan sepenuhnya di browser, menyimpan draft di perangkat, dapat meminta draft terstruktur dari model OpenRouter, lalu mengekspor dokumen RPS sebagai HTML mandiri.
+Workspace end-to-end untuk mengelola Rencana Pembelajaran Semester berbasis OBE di FSM Informatika, Universitas Diponegoro. Aplikasi sekarang memiliki dua runtime:
 
-## Fitur MVP
+- **Platform mode**: Fastify + TypeScript, PostgreSQL, Drizzle ORM, Better Auth, role-based access, lifecycle RPS, audit log, dan AI SDK/OpenRouter di server.
+- **Portable mode**: editor browser-only lama tetap tersedia, memakai IndexedDB dan menghasilkan satu file `dist/index.html`. Jika backend tidak terdeteksi, UI otomatis masuk ke mode ini. Gunakan `?portable=1` untuk memaksanya.
 
-- Editor bertahap: identitas, CPL/CPMK, matriks alignment, jadwal 16 minggu, assessment, rubrik, dan validasi.
-- Quality check deterministik untuk kelengkapan, kata kerja Bloom, bobot 100%, mapping, dan cakupan assessment.
-- Chat OpenRouter dengan respons streaming dan Markdown aman; konteks memakai snapshot ringkas RPS serta 12 pesan terakhir.
-- Quick action AI menghasilkan draft terstruktur yang divalidasi dengan JSON Schema dan selalu memerlukan persetujuan sebelum diterapkan.
-- Autosave RPS, chat, dan preferensi melalui IndexedDB; data lama dari `localStorage` dimigrasikan otomatis satu kali.
-- Tiga mode API key: hanya tab, `sessionStorage`, atau vault lokal terenkripsi dengan PIN.
-- Backup/restore workspace dan permintaan persistent storage dari browser; credential tidak pernah masuk backup.
-- Import/export JSON, standalone HTML, Print/PDF, dan DOCX menggunakan `docx`/docx.js.
-- Build produksi menjadi satu `index.html` yang dapat dibuka langsung tanpa server.
-- Contoh bawaan menggunakan Dasar Pemrograman (`MIK1624102`, 3 SKS) dan identitas UNDIP/FSM/Informatika.
+## Yang sudah tersedia di platform mode
 
-## Menjalankan pengembangan
+- Login dan session Better Auth.
+- Peran `SUPERADMIN`, `ADMIN_PRODI`, `KAPRODI`, `GPM`, `DOSEN_PENGAMPU`, dan `MAHASISWA`, dengan scope program studi.
+- Master data program studi, periode, kurikulum, angkatan/cohort, mata kuliah, penempatan kurikulum, dan kelas.
+- Dokumen RPS tersimpan di PostgreSQL, diedit memakai editor lima langkah yang sama, dan autosave ke server.
+- Lifecycle `draft → submitted → verified` atau `needs_revision`, dengan quality check deterministik pada server sebelum submit.
+- OpenRouter melalui Vercel AI SDK di server. Chat mendukung streaming; draft terstruktur disimpan sebagai proposal dan hanya diterapkan setelah approval user.
+- Proteksi stale proposal menggunakan hash snapshot RPS, serta audit log untuk perubahan penting.
+- Gradebook per kelas: sinkronisasi assessment dari RPS Verified, input/release nilai, calculation run capaian CPMK berbobot, dan finding CQI otomatis saat capaian kelas di bawah target.
+- Fondasi data mahasiswa, enrollment, assessment, nilai, calculation run, pencapaian CPMK/CPL, dan CQI tersimpan sebagai histori terpisah di PostgreSQL.
+- Drizzle Studio tersedia hanya sebagai alat developer, bukan sebagai admin UI pengguna.
 
-Persyaratan: Node.js 20.19+ dan npm.
+## Menjalankan secara lokal
 
-```bash
-npm install
-npm run dev
+Persyaratan: Node.js 20.19+ (Node.js 22 direkomendasikan), pnpm 11, dan Docker Desktop atau PostgreSQL lokal.
+
+```powershell
+pnpm install
+Copy-Item .env.example .env
+pnpm db:up
+pnpm db:migrate
+pnpm db:seed
+pnpm dev
 ```
 
-Build portable:
+Buka `http://localhost:5173`. Akun seed:
+
+API berjalan di `http://localhost:3001`. `docker compose` memetakan PostgreSQL ke port host `5433` agar tidak berbenturan dengan instalasi PostgreSQL default di port 5432.
+
+| Peran | Email | Password |
+|---|---|---|
+| Superadmin | `admin@rps.local` | `Admin123!` |
+| Dosen | `dosen@rps.local` | `Dosen123!` |
+| GPM | `gpm@rps.local` | `GpmDemo123!` |
+| Mahasiswa | `mahasiswa@rps.local` | `Mahasiswa123!` |
+
+Untuk mengaktifkan AI server, isi `OPENROUTER_API_KEY` di `.env`. Browser tidak menerima atau menyimpan key tersebut. Model default dapat diganti melalui `OPENROUTER_MODEL`.
+
+## Perintah penting
 
 ```bash
-npm run build
+pnpm dev              # Fastify dan Vite bersamaan
+pnpm dev:api          # hanya API pada port 3001
+pnpm dev:web          # hanya Vite pada port 5173
+pnpm db:generate      # generate SQL migration dari schema
+pnpm db:migrate       # jalankan migration
+pnpm db:seed          # isi data dan akun demo secara idempotent
+pnpm db:studio        # Drizzle Studio untuk developer
+pnpm lint
+pnpm build
 ```
 
-Hasilnya berada di `dist/index.html`. Untuk distribusi, cukup berikan file HTML tersebut atau ZIP portable yang tersedia di folder induk proyek.
+`pnpm build` memeriksa tipe backend, memeriksa tipe frontend, lalu membangun portable single-file app di `dist/index.html`. Build statis lama tetap deployable ke GitHub Pages; platform mode memerlukan backend dan PostgreSQL jika nanti deployment server mulai dibahas.
 
-## Cara memakai AI
+Jika database lokal ingin dihentikan tanpa menghapus volumenya, jalankan `pnpm db:down`. Data PostgreSQL tetap berada di Docker volume `rps_obe_postgres`; penghapusan volume bukan bagian dari perintah tersebut.
 
-1. Buka **AI & Model**.
-2. Masukkan OpenRouter API key pribadi dengan spending limit.
-3. Model awal adalah `z-ai/glm-5.3-flash`. Muat katalog untuk memilih model lain atau ketik slug secara manual.
-4. Gunakan panel **Asisten RPS** untuk berdiskusi, atau tekan **Bantu dengan AI** pada bagian yang diinginkan.
-5. Periksa preview draft lalu pilih **Terapkan** atau **Tolak**. Draft otomatis dinonaktifkan jika RPS berubah setelah draft dibuat.
+## Struktur utama
 
-Pilih mode penyimpanan API key sesuai perangkat:
+- `server/index.ts` — bootstrap Fastify dan error handling.
+- `server/db/schema.ts` — schema PostgreSQL/Drizzle untuk auth dan domain OBE.
+- `server/routes/platform-routes.ts` — dashboard dan master data.
+- `server/routes/rps-routes.ts` — CRUD dan lifecycle RPS.
+- `server/routes/ai-routes.ts` — streaming chat dan proposal AI server-side.
+- `server/scripts/seed.ts` — data akademik serta akun demo.
+- `src/platform/` — shell login, dashboard, admin, daftar RPS, dan editor server-backed.
+- `src/AppV2.tsx` — aplikasi portable/browser-only yang tetap dipertahankan.
+- `drizzle/` — migration SQL yang dapat diaudit dan diulang.
 
-- **Hanya tab ini**: key hilang saat halaman dimuat ulang.
-- **Sampai browser ditutup**: key berada di `sessionStorage` dan hilang ketika sesi browser berakhir.
-- **Terenkripsi di perangkat**: key disimpan sebagai ciphertext AES-256-GCM di IndexedDB. Kunci enkripsi diturunkan dari PIN/passphrase menggunakan PBKDF2-SHA256 600.000 iterasi; PIN dan hasil dekripsi hanya berada di memory dan harus dimasukkan lagi setelah reload.
+## Guardrail penting
 
-API key tidak pernah dimasukkan ke JSON RPS, backup workspace, atau HTML hasil ekspor. Saat AI digunakan, konteks RPS dikirim ke OpenRouter dan provider model yang dipilih. Untuk deployment bersama/multi-user, pindahkan panggilan OpenRouter ke backend/proxy agar key institusi tidak berada di browser.
+- AI tidak menulis langsung ke RPS. Structured output divalidasi, ditampilkan sebagai proposal, dan perlu approval eksplisit.
+- Proposal otomatis menjadi stale jika data RPS berubah sejak proposal dibuat.
+- API key OpenRouter hanya dibaca dari environment backend dan tidak masuk database, export, atau browser bundle.
+- Endpoint mutation memeriksa session, role, dan scope program studi; UI bukan batas keamanan.
+- Quality check tetap deterministik dan terpisah dari output model.
 
-## Penyimpanan dan backup
+## Portable editor
 
-- Buka **Storage & Privacy** untuk melihat status autosave, estimasi penggunaan, dan retention browser.
-- **Aktifkan penyimpanan permanen** meminta browser agar origin tidak dibersihkan otomatis; browser tetap berhak menolak.
-- **Backup workspace** mencakup RPS, chat, dan preferensi non-secret. API key sengaja dikecualikan.
-- Untuk versi portable `file://`, pertahankan nama dan lokasi file HTML. Memindahkan file atau memakai private browsing dapat menghasilkan origin/storage yang berbeda.
+Mode portable mempertahankan autosave IndexedDB, local credential vault, chat OpenRouter dari browser, import/export JSON, HTML, Print/PDF, serta DOCX. Build ini tetap berguna untuk distribusi offline atau GitHub Pages, tetapi tidak menyediakan akun, database bersama, atau approval workflow lintas pengguna.
 
-## Implementasi DOCX
+## Workspace akademik
 
-Exporter memakai `docx` 9.7 (docx.js). Data RPS diubah menjadi objek `Document`, `Table`, `TableRow`, `TableCell`, dan `Paragraph`; jadwal ditempatkan pada section landscape, lalu `Packer.toBlob()` menghasilkan OOXML/DOCX langsung di browser. Pendekatan ini menggantikan ZIP/XML manual pada versi awal.
+- Navigasi memakai hash URL agar refresh/back tetap bekerja tanpa konfigurasi server statis. Mode development menampilkan error backend; gunakan `?portable` untuk memilih editor offline secara eksplisit.
+- Login menampilkan error terstruktur. Autosave RPS memakai `revision` dan header `If-Match`; konflik tidak menimpa perubahan server. UI menyediakan retry, muat versi server, dan ekspor salinan lokal.
+- Persetujuan berurutan GPM → Kaprodi, dengan riwayat putaran. Penulis tidak dapat mereview sendiri. Data verified existing dipertahankan; pending existing mulai dari GPM.
+- Kelas mendukung edit identitas/status/kapasitas, penugasan dosen, daftar peserta, dan impor. Relasi akademik kelas existing tidak dipindahkan melalui edit.
+- Impor CSV/XLSX memakai preview server 15 menit, lalu commit atomik setelah validasi ulang. Maksimal 1.000 baris / 2 MB. `kode_angkatan` adalah tahun masuk angkatan kelas; NIM harus berupa teks. Nilai released tidak dapat ditimpa; overwrite draft perlu konfirmasi. Preview tersimpan sementara dalam proses API dan hilang jika API restart.
+- CQI menyimpan rencana aksi, penanggung jawab, tenggat, riwayat, dan bukti. Penutupan/pengembalian membutuhkan reviewer dan komentar. Lampiran PDF/PNG/JPEG maksimal 10 MB disimpan di `.data/cqi-evidence`, bukan folder publik. Backup database perlu disertai backup direktori ini.
+- Chat editor dapat diciutkan, diubah lebarnya, atau diperbesar. Percakapan dan input disimpan per pengguna/RPS dalam session storage; tidak memuat kredensial. Stream backend berupa NDJSON `text`, `error`, dan `done` serta mendukung pembatalan.
 
-Jika tahap berikutnya wajib mempertahankan layout sebuah file Word resmi secara sangat presisi, gunakan Docxtemplater dengan placeholder dan loop pada salinan template `.docx`. Trade-off-nya: aplikasi perlu membawa/memuat file template, dan beberapa fitur tabel/gambar tingkat lanjut merupakan modul berbayar.
+## Pengujian PostgreSQL terisolasi
 
-## Batas MVP
+Pengujian integrasi menolak database selain `rps_obe_test`. Database ini terpisah dari data aplikasi dan berisi fixture sintetis dengan ID unik.
 
-- Fokus pada penyusunan RPS, belum mencakup akun, approval workflow, version history terpusat, atau database server. IndexedDB hanya menyimpan workspace lokal pada browser/perangkat tersebut.
-- HTML adalah output utama dan paling stabil. DOCX dibuat client-side dengan docx.js; layout masih dapat sedikit berbeda antara Microsoft Word, LibreOffice, dan Google Docs.
-- CPL resmi, identitas, referensi, dan kebijakan akademik tetap harus diverifikasi manusia.
+```powershell
+# Sekali saja, jika database belum ada:
+docker compose exec -T postgres psql -U rps_obe -d postgres -c "CREATE DATABASE rps_obe_test;"
+$previousDatabaseUrl = $env:DATABASE_URL
+try {
+  $env:DATABASE_URL = 'postgresql://rps_obe:rps_obe@localhost:5433/rps_obe_test'
+  pnpm db:migrate
+  pnpm test
+} finally {
+  $env:DATABASE_URL = $previousDatabaseUrl
+}
+pnpm lint
+pnpm build
+```
 
-## Stack
+Suite memeriksa normalisasi error, login/logout, scope program, impor CSV/XLSX, duplikasi dan overwrite, optimistic concurrency, revisi dan persetujuan dua tahap, self-approval, keputusan bersamaan, rilis nilai, privasi mahasiswa, perhitungan, CQI, serta otorisasi lampiran. Tidak ada deployment yang dijalankan oleh pengujian.
 
-React 19, TypeScript 6, Vite 8, Tailwind CSS 4, shadcn/ui preset `b3f0SOrXVY` (Base UI, Mist, Geist/Inter, Hugeicons), Zustand, Zod, IndexedDB melalui `idb`, Web Crypto, OpenRouter REST API, `react-markdown`, `remark-gfm`, `eventsource-parser`, docx.js 9.7, dan `vite-plugin-singlefile`.
+Logo `src/assets/logo-undip.png` diperbaiki dari referensi pengguna menggunakan imagegen bawaan. Instruksi edit: hapus hanya latar putih di luar batas lambang; pertahankan warna putih di bagian dalam, tulisan, bentuk, dan rasio lambang. Area luar memiliki alpha transparan sehingga tidak memerlukan latar kotak putih pada sidebar navy.

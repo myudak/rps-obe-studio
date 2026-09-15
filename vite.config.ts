@@ -9,6 +9,14 @@ export default defineConfig({
   base: './',
   publicDir: false,
   plugins: [react(), tailwindcss(), viteSingleFile()],
+  server: {
+    proxy: {
+      '/api': {
+        target: 'http://127.0.0.1:3001',
+        changeOrigin: false,
+      },
+    },
+  },
   build: {
     assetsInlineLimit: 100000000,
     cssCodeSplit: false,

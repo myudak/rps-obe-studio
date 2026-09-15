@@ -1,6 +1,6 @@
 import { z } from "zod"
 
-import { CPL_KEYS, type RpsData } from "@/schemas/rps-schema"
+import { CPL_KEYS, type RpsData } from "../schemas/rps-schema.ts"
 
 const API_BASE = "https://openrouter.ai/api/v1"
 
@@ -18,7 +18,7 @@ export type AiTask = (typeof AI_TASKS)[number]
 export type AiDraft = { task: AiTask; label: string; payload: unknown; warnings: string[] }
 
 const mapZod = z.object(Object.fromEntries(CPL_KEYS.map((key) => [key, z.number().int().min(0).max(3)])) as Record<(typeof CPL_KEYS)[number], z.ZodNumber>)
-const schemas = {
+export const aiDraftSchemas = {
   description: z.object({ descriptionId: z.string(), descriptionEn: z.string(), warnings: z.array(z.string()) }),
   cpmk: z.object({ cpmk: z.array(z.object({ code: z.string(), text: z.string(), en: z.string(), weight: z.number(), maps: mapZod })).length(6), warnings: z.array(z.string()) }),
   schedule: z.object({ schedule: z.array(z.object({ week: z.number().int(), cpmk: z.string(), topic: z.string(), subtopic: z.string(), outcome: z.string(), method: z.string(), media: z.string(), assessment: z.string() })).length(16), warnings: z.array(z.string()) }),
@@ -69,7 +69,7 @@ const jsonSchemas: Record<AiTask, object> = {
   },
 }
 
-const taskLabels: Record<AiTask, string> = {
+export const aiTaskLabels: Record<AiTask, string> = {
   description: "Draft deskripsi mata kuliah",
   cpmk: "Draft CPMK dan mapping CPL",
   schedule: "Draft jadwal 16 minggu",
@@ -133,9 +133,9 @@ export async function generateAiDraft(input: { apiKey: string; model: string; te
   if (!content) throw new Error("Model tidak mengembalikan konten yang dapat digunakan.")
   let parsed: unknown
   try { parsed = JSON.parse(content) } catch { throw new Error("Respons model bukan JSON valid. Coba model yang mendukung Structured Outputs.") }
-  const validated = schemas[task].safeParse(parsed)
+  const validated = aiDraftSchemas[task].safeParse(parsed)
   if (!validated.success) throw new Error(`Respons model tidak sesuai schema: ${validated.error.issues[0]?.message ?? "unknown"}`)
-  return { task, label: taskLabels[task], payload: validated.data, warnings: validated.data.warnings }
+  return { task, label: aiTaskLabels[task], payload: validated.data, warnings: validated.data.warnings }
 }
 
 export function applyAiDraft(data: RpsData, draft: AiDraft): RpsData {

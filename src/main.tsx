@@ -2,7 +2,7 @@ import { StrictMode } from "react"
 import { createRoot } from "react-dom/client"
 
 import undipLogo from "./assets/logo-undip.png?inline"
-import App from "./AppV2"
+import App from "./RootApp"
 import "./index.css"
 import "./enhancements.css"
 const favicon = document.createElement("link")

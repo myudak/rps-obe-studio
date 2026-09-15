@@ -25,7 +25,7 @@ const AI_ACTION_LABELS: Partial<Record<AiTask, string>> = {
 function SectionHeading({ title, description, task, onAi }: { title: string; description: string; task?: AiTask; onAi: AiHandler }) {
   return (
     <div className="mb-5 flex flex-col justify-between gap-3 border-b pb-4 md:flex-row md:items-start">
-      <div><h2 className="font-heading text-xl font-semibold tracking-tight">{title}</h2><p className="mt-1 max-w-2xl text-sm text-muted-foreground">{description}</p></div>
+      <div><h2 className="font-heading text-xl font-semibold tracking-tight">{title}</h2><p className="editor-guidance mt-1 max-w-2xl text-sm text-muted-foreground">{description}</p></div>
       {task && <Button variant="outline" onClick={() => onAi(task)}>{AI_ACTION_LABELS[task]}</Button>}
     </div>
   )
