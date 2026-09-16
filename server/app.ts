@@ -13,6 +13,10 @@ import { registerPlatformRoutes } from "./routes/platform-routes.ts"
 import { registerRpsRoutes } from "./routes/rps-routes.ts"
 import { registerAcademicRoutes } from "./routes/academic-routes.ts"
 import { registerImportRoutes } from "./routes/import-routes.ts"
+import { registerAdminStudioRoutes } from "./routes/admin-studio-routes.ts"
+import { registerOutcomeSystemRoutes } from "./routes/outcome-system-routes.ts"
+import { registerDataBrowserRoutes } from "./routes/data-browser-routes.ts"
+import { registerFullDemoRoutes } from "./routes/full-demo-routes.ts"
 
 export async function createApp(logger = false, modelOverride?: LanguageModel) {
 const app = Fastify({ logger })
@@ -35,6 +39,10 @@ await registerOutcomeRoutes(app)
 await registerAiRoutes(app, modelOverride)
 await registerAcademicRoutes(app)
 await registerImportRoutes(app)
+await registerAdminStudioRoutes(app)
+await registerOutcomeSystemRoutes(app)
+await registerDataBrowserRoutes(app)
+await registerFullDemoRoutes(app)
 
 app.setErrorHandler((error, _request, reply) => {
   if (error instanceof HttpError) return reply.status(error.statusCode).send({ error: error.message })

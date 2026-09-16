@@ -38,17 +38,17 @@ export const rpsSchema = z.object({
     code: z.string(),
     description: z.string(),
     en: z.string(),
-  })).length(10),
+  })).min(1).max(10),
   cpmk: z.array(z.object({
     code: z.string(),
     text: z.string(),
     en: z.string(),
     weight: z.number().min(0).max(100),
     maps: mappingSchema,
-  })).length(6),
+  })).min(1).max(20),
   references: z.object({
-    main: z.array(z.string()).length(3),
-    additional: z.array(z.string()).length(3),
+    main: z.array(z.string()).max(20),
+    additional: z.array(z.string()).max(20),
   }),
   schedule: z.array(z.object({
     week: z.number().int().min(1).max(16),
@@ -65,7 +65,7 @@ export const rpsSchema = z.object({
     weight: z.number().min(0).max(100),
     cpmk: z.array(z.string()),
     notes: z.string(),
-  })).length(6),
+  })).min(1).max(30),
   rubrics: z.array(z.object({
     criterion: z.string(),
     cpmk: z.string(),
@@ -74,7 +74,7 @@ export const rpsSchema = z.object({
     level3: z.string(),
     level2: z.string(),
     level1: z.string(),
-  })).length(5),
+  })).min(1).max(30),
   validation: z.object({
     author: z.string(),
     authorId: z.string(),

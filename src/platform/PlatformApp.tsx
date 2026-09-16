@@ -15,6 +15,7 @@ import {
   Users,
 } from "lucide-react";
 
+import { LoginForm } from "@/components/login-form";
 import undipLogo from "@/assets/logo-undip.png?inline";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Badge } from "@/components/ui/badge";
@@ -43,107 +44,18 @@ const selectClass =
   "h-9 w-full rounded-md border bg-background px-3 text-sm outline-none focus:border-ring focus:ring-3 focus:ring-ring/30";
 
 export function Login({ onSuccess }: { onSuccess: () => void | Promise<void> }) {
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  const [showPassword, setShowPassword] = useState(false);
-  const submit = async (event: FormEvent) => {
-    event.preventDefault();
-    setBusy(true);
-    setError("");
-    try {
-      await api.send("/api/auth/sign-in/email", "POST", {
-        email,
-        password,
-        rememberMe: true,
-      });
-      await onSuccess();
-    } catch (reason) {
-      setError(reason instanceof Error ? reason.message : "Login gagal.");
-    } finally {
-      setBusy(false);
-    }
-  };
-  return (
-    <main className="grid min-h-svh bg-[#f3f6f8] lg:grid-cols-[1.15fr_.85fr]">
-      <section className="hidden border-r bg-[#083d68] p-12 text-white lg:flex lg:flex-col lg:justify-between">
-        <div className="flex items-center gap-3">
-          <img
-            className="size-12 object-contain"
-            src={undipLogo}
-            alt="Universitas Diponegoro"
-          />
-          <div>
-            <div className="font-semibold">RPS OBE Studio</div>
-            <div className="text-sm text-blue-100">
-              FSM Informatika · Universitas Diponegoro
-            </div>
-          </div>
-        </div>
-        <div className="max-w-xl">
-          <h1 className="text-4xl font-semibold leading-tight">
-            Kelola RPS, kelas, kurikulum, dan verifikasi OBE dalam satu alur.
-          </h1>
-          <p className="mt-5 max-w-lg leading-relaxed text-blue-100">
-            Susun pembelajaran, tinjau RPS, dan tindak lanjuti capaian mahasiswa.
-          </p>
-        </div>
-        <div />
-      </section>
-      <section className="grid place-items-center p-6">
-        <form className="w-full max-w-sm" onSubmit={submit}>
-          <div className="mb-8 flex items-center gap-3 lg:hidden">
-            <img
-              className="size-11 object-contain"
-              src={undipLogo}
-              alt="UNDIP"
-            />
-            <b>RPS OBE Studio</b>
-          </div>
-          <h2 className="text-2xl font-semibold">Masuk ke workspace</h2>
-          <p className="mt-2 text-sm text-muted-foreground">
-            Masukkan email dan password akun Anda.
-          </p>
-          {error && (
-            <Alert className="mt-5" variant="destructive">
-              <CircleAlert />
-              <AlertTitle>Login gagal</AlertTitle>
-              <AlertDescription>{error}</AlertDescription>
-            </Alert>
-          )}
-          <div className="mt-6 space-y-4">
-            <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
-              <Input
-                id="email"
-                type="email"
-                autoComplete="email"
-                required
-                value={email}
-                onChange={(event) => setEmail(event.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="password">Password</Label>
-              <Input
-                id="password"
-                type={showPassword ? "text" : "password"}
-                autoComplete="current-password"
-                required
-                value={password}
-                onChange={(event) => setPassword(event.target.value)}
-              />
-              <button type="button" className="text-xs text-primary" aria-pressed={showPassword} onClick={() => setShowPassword(value => !value)}>{showPassword ? "Sembunyikan password" : "Tampilkan password"}</button>
-            </div>
-            <Button className="w-full" size="lg" type="submit" disabled={busy}>
-              {busy && <Loader2 className="animate-spin" />}Masuk
-            </Button>
-          </div>
-        </form>
-      </section>
-    </main>
-  );
+  return <main className="login-page grid min-h-svh lg:grid-cols-2">
+    <section className="flex min-h-svh flex-col p-6 md:p-10 lg:px-14">
+      <a href="#/dashboard" className="flex w-fit items-center gap-3"><img src={undipLogo} alt="UNDIP" className="h-10 w-8 object-contain" /><span className="text-sm font-semibold">RPS OBE Studio<span className="mt-0.5 block text-xs font-normal text-muted-foreground">Universitas Diponegoro</span></span></a>
+      <div className="flex flex-1 items-center justify-center py-16"><div className="w-full max-w-sm"><LoginForm onSuccess={onSuccess} /></div></div>
+      <p className="text-xs text-muted-foreground">Fakultas Sains dan Matematika · Informatika</p>
+    </section>
+    <div className="login-art relative hidden overflow-hidden bg-primary lg:block" aria-hidden="true">
+      <img src="https://images.unsplash.com/photo-1604076850742-4c7221f3101b?q=80&w=1887&auto=format&fit=crop" alt="" className="absolute inset-0 h-full w-full object-cover" />
+      <div className="absolute inset-0 z-30 bg-primary opacity-50 mix-blend-color" />
+      <div className="absolute inset-0 z-20 bg-sky-950/20" />
+    </div>
+  </main>
 }
 
 function Stat({

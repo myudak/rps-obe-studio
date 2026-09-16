@@ -19,7 +19,7 @@ export async function decideRps(id: string, access: AccessContext, programId: st
     if (decision === "approved" && stage.stage === "GPM") await tx.insert(approvals).values({ rpsId: id, round: stage.round, stage: "KAPRODI", submittedByProfileId: stage.submittedByProfileId })
     if (decision === "rejected") await tx.update(approvals).set({ decision: "stale", updatedAt: now }).where(and(eq(approvals.rpsId, id), eq(approvals.decision, "pending")))
     const [updated] = await tx.update(rpsDocuments).set({ status, revision: rps.revision + 1, updatedAt: now, ...(status === "verified" ? { verifiedAt: now, verifiedByProfileId: access.profile.id } : {}) }).where(and(eq(rpsDocuments.id, id), inArray(rpsDocuments.status, ["submitted"]))).returning()
-    await writeAudit(tx, { actorProfileId: access.profile.id, action: `RPS_${stage.stage}_${decision.toUpperCase()}`, entityType: "rps", entityId: id, after: { status, round: stage.round, comment } })
+    await writeAudit(tx, { actorProfileId: access.profile.id, impersonatorProfileId: access.impersonation?.impersonatedByProfileId, action: `RPS_${stage.stage}_${decision.toUpperCase()}`, entityType: "rps", entityId: id, after: { status, round: stage.round, comment } })
     return updated
   })
 }

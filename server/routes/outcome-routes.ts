@@ -1,9 +1,9 @@
-import { and, desc, eq } from "drizzle-orm"
+import { and, desc, eq, inArray } from "drizzle-orm"
 import type { FastifyInstance } from "fastify"
 import { z } from "zod"
 
 import { db } from "../db/client.ts"
-import { achievements, assessments, calculationRuns, classSections, courses, cqiFindings, curriculumCourses, enrollments, rpsDocuments, scores, students } from "../db/schema.ts"
+import { achievements, assessmentOutcomeMappings, assessments, calculationRuns, classSections, courseOutcomeMappings, courseOutcomes, courses, cqiFindings, curricula, curriculumCourses, curriculumOutcomes, enrollments, rpsDocuments, scores, students } from "../db/schema.ts"
 import { assertClassAccess, getAccessContext, HttpError, requireRole } from "../lib/access.ts"
 import { writeAudit } from "../lib/audit.ts"
 import { isClassStaff, requireClassRole } from "../lib/class-scope.ts"
@@ -13,8 +13,8 @@ const scoreParams = z.object({ id: z.string().uuid() })
 const scoreInput = z.object({ enrollmentId: z.string().uuid(), assessmentId: z.string().uuid(), rawScore: z.number().min(0).max(100) })
 
 async function classContext(classId: string) {
-  const [row] = await db.select({ id: classSections.id, programId: courses.programId, courseName: courses.name, className: classSections.name })
-    .from(classSections).innerJoin(curriculumCourses, eq(classSections.curriculumCourseId, curriculumCourses.id)).innerJoin(courses, eq(curriculumCourses.courseId, courses.id)).where(eq(classSections.id, classId)).limit(1)
+  const [row] = await db.select({ id: classSections.id, programId: courses.programId, courseName: courses.name, className: classSections.name, curriculumCourseId: curriculumCourses.id, curriculumId: curricula.id })
+    .from(classSections).innerJoin(curriculumCourses, eq(classSections.curriculumCourseId, curriculumCourses.id)).innerJoin(courses, eq(curriculumCourses.courseId, courses.id)).innerJoin(curricula, eq(curriculumCourses.curriculumId, curricula.id)).where(eq(classSections.id, classId)).limit(1)
   if (!row) throw new HttpError(404, "Kelas tidak ditemukan.")
   return row
 }
@@ -53,10 +53,39 @@ export async function registerOutcomeRoutes(app: FastifyInstance) {
     await requireClassRole(access, id, context.programId, ["ADMIN_PRODI", "DOSEN_PENGAMPU"])
     const rps = await latestVerifiedRps(id)
     await db.transaction(async (tx) => {
-      for (const [index, item] of rps.data.assessments.entries()) {
-        await tx.insert(assessments).values({ rpsId: rps.id, code: `A${index + 1}`, name: item.name || `Assessment ${index + 1}`, weight: String(item.weight), maximumScore: "100" }).onConflictDoUpdate({ target: [assessments.rpsId, assessments.code], set: { name: item.name || `Assessment ${index + 1}`, weight: String(item.weight), updatedAt: new Date() } })
+      const normalizedCpl: Array<typeof curriculumOutcomes.$inferSelect | undefined> = []
+      for (const [index, item] of rps.data.cpl.entries()) {
+        if (!item.description.trim()) continue
+        const [saved] = await tx.insert(curriculumOutcomes).values({ curriculumId: context.curriculumId, code: `CPL-${index + 1}`, name: item.description.slice(0, 100), description: item.description, sortOrder: index + 1 }).onConflictDoUpdate({ target: [curriculumOutcomes.curriculumId, curriculumOutcomes.code], set: { name: item.description.slice(0, 100), description: item.description, updatedAt: new Date() } }).returning()
+        if (saved) normalizedCpl[index] = saved
       }
-      await writeAudit(tx, { actorProfileId: access.profile.id, action: "ASSESSMENTS_SYNCED", entityType: "class", entityId: id, after: { rpsId: rps.id, count: rps.data.assessments.length } })
+      const normalizedCpmk: Array<typeof courseOutcomes.$inferSelect | undefined> = []
+      for (const [index, item] of rps.data.cpmk.entries()) {
+        if (!item.text.trim()) continue
+        const [saved] = await tx.insert(courseOutcomes).values({ curriculumCourseId: context.curriculumCourseId, code: item.code, description: item.text, descriptionEn: item.en, weight: String(item.weight), sortOrder: index + 1 }).onConflictDoUpdate({ target: [courseOutcomes.curriculumCourseId, courseOutcomes.code], set: { description: item.text, descriptionEn: item.en, weight: String(item.weight), updatedAt: new Date() } }).returning()
+        if (!saved) continue
+        normalizedCpmk[index] = saved
+        await tx.delete(courseOutcomeMappings).where(eq(courseOutcomeMappings.courseOutcomeId, saved.id))
+        const mappings = Object.entries(item.maps).flatMap(([key, level]) => {
+          const target = normalizedCpl[key.charCodeAt(0) - 97]
+          return target && level > 0 ? [{ courseOutcomeId: saved.id, curriculumOutcomeId: target.id, level, contribution: "1" }] : []
+        })
+        if (mappings.length) await tx.insert(courseOutcomeMappings).values(mappings)
+      }
+      const savedAssessments: Array<typeof assessments.$inferSelect | undefined> = []
+      for (const [index, item] of rps.data.assessments.entries()) {
+        const [saved] = await tx.insert(assessments).values({ rpsId: rps.id, code: `A${index + 1}`, name: item.name || `Assessment ${index + 1}`, weight: String(item.weight), maximumScore: "100" }).onConflictDoUpdate({ target: [assessments.rpsId, assessments.code], set: { name: item.name || `Assessment ${index + 1}`, weight: String(item.weight), updatedAt: new Date() } }).returning()
+        if (saved) savedAssessments[index] = saved
+      }
+      const persistedAssessments = savedAssessments.filter((item): item is typeof assessments.$inferSelect => Boolean(item))
+      if (persistedAssessments.length) await tx.delete(assessmentOutcomeMappings).where(inArray(assessmentOutcomeMappings.assessmentId, persistedAssessments.map(item => item.id)))
+      const assessmentMappings = rps.data.assessments.flatMap((item, assessmentIndex) => item.cpmk.flatMap(code => {
+        const outcome = normalizedCpmk.find(candidate => candidate?.code === code)
+        const assessment = savedAssessments[assessmentIndex]
+        return outcome && assessment ? [{ assessmentId: assessment.id, courseOutcomeId: outcome.id, weight: "1" }] : []
+      }))
+      if (assessmentMappings.length) await tx.insert(assessmentOutcomeMappings).values(assessmentMappings)
+      await writeAudit(tx, { actorProfileId: access.profile.id, impersonatorProfileId: access.impersonation?.impersonatedByProfileId, action: "ASSESSMENTS_SYNCED", entityType: "class", entityId: id, after: { rpsId: rps.id, count: rps.data.assessments.length, outcomes: normalizedCpmk.length } })
     })
     return { ok: true }
   })
@@ -101,11 +130,15 @@ export async function registerOutcomeRoutes(app: FastifyInstance) {
     const enrollmentRows = await db.select().from(enrollments).where(eq(enrollments.classId, id))
     const assessmentRows = await db.select().from(assessments).where(eq(assessments.rpsId, rps.id))
     const scoreRows = await db.select().from(scores).innerJoin(enrollments, eq(scores.enrollmentId, enrollments.id)).where(and(eq(enrollments.classId, id), eq(scores.status, "released")))
+    const normalizedOutcomeRows = await db.select().from(courseOutcomes).where(eq(courseOutcomes.curriculumCourseId, context.curriculumCourseId))
+    const normalizedMappings = normalizedOutcomeRows.length ? await db.select({ courseOutcomeId: courseOutcomeMappings.courseOutcomeId, curriculumOutcomeId: curriculumOutcomes.id, cplCode: curriculumOutcomes.code, cplTarget: curriculumOutcomes.target, level: courseOutcomeMappings.level, contribution: courseOutcomeMappings.contribution }).from(courseOutcomeMappings).innerJoin(curriculumOutcomes, eq(curriculumOutcomes.id, courseOutcomeMappings.curriculumOutcomeId)).where(inArray(courseOutcomeMappings.courseOutcomeId, normalizedOutcomeRows.map(item => item.id))) : []
     if (!enrollmentRows.length || !assessmentRows.length) throw new HttpError(409, "Enrollment atau assessment belum tersedia.")
     const byEnrollmentAssessment = new Map(scoreRows.map((row) => [`${row.score.enrollmentId}:${row.score.assessmentId}`, Number(row.score.rawScore)]))
     return db.transaction(async (tx) => {
-      const [run] = await tx.insert(calculationRuns).values({ classId: id, status: "running", requestedByProfileId: access.profile.id, parameters: { formula: "weighted-assessment", studentTarget: 60, classTarget: 70 } }).returning()
+      const [run] = await tx.insert(calculationRuns).values({ classId: id, status: "running", requestedByProfileId: access.profile.id, parameters: { formula: "weighted-assessment+cpmk-to-cpl-v1", studentTarget: 60, classTarget: 70, cplWeight: "cpmkWeight × mappingLevel × contribution" } }).returning()
       if (!run) throw new Error("Calculation run gagal dibuat.")
+      const cpmkClassValues = new Map<string, number>()
+      const cpmkStudentValues = new Map<string, Map<string, number>>()
       for (const cpmk of rps.data.cpmk) {
         const mapped = assessmentRows.filter((assessment) => rps.data.assessments[Number(assessment.code.slice(1)) - 1]?.cpmk.includes(cpmk.code))
         const weightTotal = mapped.reduce((sum, item) => sum + Number(item.weight), 0)
@@ -117,11 +150,40 @@ export async function registerOutcomeRoutes(app: FastifyInstance) {
         }
         for (const result of studentResults) await tx.insert(achievements).values({ runId: run.id, studentId: result.studentId, scope: "student", outcomeCode: cpmk.code, value: String(result.value), target: "60", status: result.value >= 60 ? "achieved" : "not_achieved" })
         const classValue = studentResults.length ? studentResults.filter((result) => result.value >= 60).length / studentResults.length * 100 : null
+        if (classValue !== null) cpmkClassValues.set(cpmk.code, classValue)
+        cpmkStudentValues.set(cpmk.code, new Map(studentResults.map(item => [item.studentId, item.value])))
         const [aggregate] = await tx.insert(achievements).values({ runId: run.id, scope: "class", outcomeCode: cpmk.code, value: classValue === null ? null : String(classValue), target: "70", status: classValue === null ? "no_data" : classValue >= 70 ? "achieved" : "not_achieved" }).returning()
         if (aggregate && classValue !== null && classValue < 70) await tx.insert(cqiFindings).values({ achievementId: aggregate.id, ownerProfileId: access.profile.id, title: `Tindak lanjut ${cpmk.code}`, analysis: `Capaian kelas ${classValue.toFixed(1)}% berada di bawah target 70%.` })
       }
+      const outcomeById = new Map(normalizedOutcomeRows.map(item => [item.id, item]))
+      const mappingsByCpl = new Map<string, typeof normalizedMappings>()
+      for (const mapping of normalizedMappings) mappingsByCpl.set(mapping.cplCode, [...(mappingsByCpl.get(mapping.cplCode) ?? []), mapping])
+      for (const [cplCode, mappings] of mappingsByCpl) {
+        const weighted = mappings.flatMap(mapping => {
+          const outcome = outcomeById.get(mapping.courseOutcomeId)
+          const value = outcome ? cpmkClassValues.get(outcome.code) : undefined
+          const weight = outcome ? Math.max(Number(outcome.weight), 1) * mapping.level * Number(mapping.contribution) : 0
+          return value === undefined || weight <= 0 ? [] : [{ value, weight }]
+        })
+        const totalWeight = weighted.reduce((sum, item) => sum + item.weight, 0)
+        const classValue = totalWeight ? weighted.reduce((sum, item) => sum + item.value * item.weight, 0) / totalWeight : null
+        const target = Number(mappings[0]?.cplTarget ?? 70)
+        await tx.insert(achievements).values({ runId: run.id, scope: "class-cpl", outcomeCode: cplCode, value: classValue === null ? null : String(classValue), target: String(target), status: classValue === null ? "no_data" : classValue >= target ? "achieved" : "not_achieved" })
+        for (const enrollment of enrollmentRows) {
+          const studentWeighted = mappings.flatMap(mapping => {
+            const outcome = outcomeById.get(mapping.courseOutcomeId)
+            const value = outcome ? cpmkStudentValues.get(outcome.code)?.get(enrollment.studentId) : undefined
+            const weight = outcome ? Math.max(Number(outcome.weight), 1) * mapping.level * Number(mapping.contribution) : 0
+            return value === undefined || weight <= 0 ? [] : [{ value, weight }]
+          })
+          const studentWeight = studentWeighted.reduce((sum, item) => sum + item.weight, 0)
+          if (!studentWeight) continue
+          const value = studentWeighted.reduce((sum, item) => sum + item.value * item.weight, 0) / studentWeight
+          await tx.insert(achievements).values({ runId: run.id, studentId: enrollment.studentId, scope: "student-cpl", outcomeCode: cplCode, value: String(value), target: "60", status: value >= 60 ? "achieved" : "not_achieved" })
+        }
+      }
       const [completed] = await tx.update(calculationRuns).set({ status: "completed", completedAt: new Date(), updatedAt: new Date() }).where(eq(calculationRuns.id, run.id)).returning()
-      await writeAudit(tx, { actorProfileId: access.profile.id, action: "OUTCOMES_CALCULATED", entityType: "class", entityId: id, after: { runId: run.id, formula: "weighted-assessment" } })
+      await writeAudit(tx, { actorProfileId: access.profile.id, impersonatorProfileId: access.impersonation?.impersonatedByProfileId, action: "OUTCOMES_CALCULATED", entityType: "class", entityId: id, after: { runId: run.id, formula: "weighted-assessment+cpmk-to-cpl-v1", cplCount: mappingsByCpl.size } })
       return completed
     })
   })

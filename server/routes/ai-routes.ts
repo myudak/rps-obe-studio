@@ -173,7 +173,7 @@ export async function registerAiRoutes(app: FastifyInstance, modelOverride?: Lan
       if (!updated) throw new HttpError(409, "RPS berubah. Buat proposal baru.")
       const [decided] = await tx.update(aiSuggestions).set({ decision: "approved", decidedByProfileId: access.profile.id, decidedAt: now, updatedAt: now }).where(and(eq(aiSuggestions.id, id), eq(aiSuggestions.decision, "pending"))).returning()
       if (!decided) throw new HttpError(409, "Proposal sudah diputuskan.")
-      await writeAudit(tx, { actorProfileId: access.profile.id, action: "AI_SUGGESTION_APPROVED", entityType: "ai_suggestion", entityId: id, after: { rpsId: document.id, task: draft.task } })
+      await writeAudit(tx, { actorProfileId: access.profile.id, impersonatorProfileId: access.impersonation?.impersonatedByProfileId, action: "AI_SUGGESTION_APPROVED", entityType: "ai_suggestion", entityId: id, after: { rpsId: document.id, task: draft.task } })
       return updated
     })
   })

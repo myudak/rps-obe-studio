@@ -7,6 +7,7 @@ export type AccessContext = {
   user: { id: string; name: string; email: string }
   profile: { id: string; status: "active" | "inactive" }
   roles: Array<{ code: string; name: string; programId: string | null; programName: string | null }>
+  impersonation: null | { impersonatedByUserId: string; impersonatedByProfileId: string; impersonatedByName: string }
 }
 
 export type PlatformData = {

@@ -34,10 +34,18 @@ type RpsStore = {
   updateMeta: (key: keyof RpsMeta, value: string | number) => void
   updateCpl: (index: number, patch: Partial<Cpl>) => void
   updateCpmk: (index: number, patch: Partial<Cpmk>) => void
+  addCpmk: () => void
+  removeCpmk: (index: number) => void
   updateSchedule: (index: number, patch: Partial<ScheduleRow>) => void
   updateAssessment: (index: number, patch: Partial<Assessment>) => void
+  addAssessment: () => void
+  removeAssessment: (index: number) => void
   updateRubric: (index: number, patch: Partial<Rubric>) => void
+  addRubric: () => void
+  removeRubric: (index: number) => void
   updateReferences: (kind: "main" | "additional", index: number, value: string) => void
+  addReference: (kind: "main" | "additional") => void
+  removeReference: (kind: "main" | "additional", index: number) => void
   updateValidation: (key: keyof RpsData["validation"], value: string) => void
   loadExample: () => void
   reset: () => void
@@ -82,15 +90,27 @@ export const useRpsStore = create<RpsStore>()((set) => ({
       }),
     }
   }),
+  addCpmk: () => set((state) => ({ data: touch({ ...state.data, cpmk: [...state.data.cpmk, { code: `CPMK ${state.data.cpmk.length + 1}`, text: "", en: "", weight: 0, maps: { a: 0, b: 0, c: 0, d: 0, e: 0, f: 0, g: 0, h: 0, i: 0, j: 0 } }] }) })),
+  removeCpmk: (index) => set((state) => {
+    if (state.data.cpmk.length <= 1) return state
+    const removed = state.data.cpmk[index]?.code
+    const remaining = state.data.cpmk.filter((_, itemIndex) => itemIndex !== index)
+    const fallback = remaining[0]?.code ?? ""
+    return { data: touch({ ...state.data, cpmk: remaining, schedule: state.data.schedule.map(item => item.cpmk === removed ? { ...item, cpmk: fallback } : item), assessments: state.data.assessments.map(item => ({ ...item, cpmk: item.cpmk.filter(code => code !== removed) })), rubrics: state.data.rubrics.map(item => item.cpmk === removed ? { ...item, cpmk: fallback } : item) }) }
+  }),
   updateSchedule: (index, patch) => set((state) => ({
     data: touch({ ...state.data, schedule: state.data.schedule.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item) }),
   })),
   updateAssessment: (index, patch) => set((state) => ({
     data: touch({ ...state.data, assessments: state.data.assessments.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item) }),
   })),
+  addAssessment: () => set((state) => ({ data: touch({ ...state.data, assessments: [...state.data.assessments, { name: `Assessment ${state.data.assessments.length + 1}`, weight: 0, cpmk: [], notes: "" }] }) })),
+  removeAssessment: (index) => set((state) => state.data.assessments.length <= 1 ? state : ({ data: touch({ ...state.data, assessments: state.data.assessments.filter((_, itemIndex) => itemIndex !== index) }) })),
   updateRubric: (index, patch) => set((state) => ({
     data: touch({ ...state.data, rubrics: state.data.rubrics.map((item, itemIndex) => itemIndex === index ? { ...item, ...patch } : item) }),
   })),
+  addRubric: () => set((state) => ({ data: touch({ ...state.data, rubrics: [...state.data.rubrics, { criterion: `Kriteria ${state.data.rubrics.length + 1}`, cpmk: state.data.cpmk[0]?.code ?? "", weight: 0, level4: "", level3: "", level2: "", level1: "" }] }) })),
+  removeRubric: (index) => set((state) => state.data.rubrics.length <= 1 ? state : ({ data: touch({ ...state.data, rubrics: state.data.rubrics.filter((_, itemIndex) => itemIndex !== index) }) })),
   updateReferences: (kind, index, value) => set((state) => ({
     data: touch({
       ...state.data,
@@ -100,6 +120,8 @@ export const useRpsStore = create<RpsStore>()((set) => ({
       },
     }),
   })),
+  addReference: (kind) => set((state) => ({ data: touch({ ...state.data, references: { ...state.data.references, [kind]: [...state.data.references[kind], ""] } }) })),
+  removeReference: (kind, index) => set((state) => ({ data: touch({ ...state.data, references: { ...state.data.references, [kind]: state.data.references[kind].filter((_, itemIndex) => itemIndex !== index) } }) })),
   updateValidation: (key, value) => set((state) => ({
     data: touch({ ...state.data, validation: { ...state.data.validation, [key]: value } }),
   })),

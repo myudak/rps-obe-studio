@@ -5,6 +5,7 @@ type AuditDb = Pick<typeof db, "insert">
 
 export async function writeAudit(dbOrTx: AuditDb, input: {
   actorProfileId: string | null
+  impersonatorProfileId?: string | null
   action: string
   entityType: string
   entityId: string
@@ -13,6 +14,7 @@ export async function writeAudit(dbOrTx: AuditDb, input: {
 }) {
   await dbOrTx.insert(auditLogs).values({
     actorProfileId: input.actorProfileId,
+    impersonatorProfileId: input.impersonatorProfileId ?? null,
     action: input.action,
     entityType: input.entityType,
     entityId: input.entityId,

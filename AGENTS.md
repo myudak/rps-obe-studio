@@ -20,6 +20,8 @@ Repository: https://github.com/myudak/rps-obe-studio
 - `src/platform/Workspace.tsx` owns the authenticated shell and hash-based routing. Platform pages live in `src/platform/`.
 - `src/platform/Editor.tsx` wraps the five-step editor with server autosave, optimistic concurrency, submission, preview/export, and AI chat.
 - `src/platform/EditorChat.tsx` owns the collapsed, docked/resizable, and fullscreen server-backed chat UI.
+- `src/platform/AdminStudio.tsx` is the SUPERADMIN operational console for account/role management, guarded impersonation, health checks, audit, demo scenarios, and the schema-driven record browser.
+- `src/platform/OutcomeWorkspaces.tsx` owns course/curriculum workspaces, normalized outcomes, I/R/M mapping, actual-vs-target radar, coverage heatmap, longitudinal attainment/CQI, governance proposals, and RPS carry-forward.
 - `src/AppV2.tsx` is the preserved portable implementation. `src/App.tsx` is legacy and is not active.
 - `src/components/rps/editor-sections.tsx` contains the five-step editor.
 - `src/components/ai/chat-panel.tsx` contains streaming chat, structured drafts, retries, stale-draft protection, and quality-check navigation.
@@ -33,6 +35,10 @@ Repository: https://github.com/myudak/rps-obe-studio
 - `server/app.ts` builds the Fastify application; `server/index.ts` only starts and stops it.
 - `server/db/schema.ts` is the Drizzle source of truth. Commit generated SQL migrations under `drizzle/`; do not replace migrations with ad-hoc schema mutation.
 - `server/routes/` enforces authorization. Hiding controls in React is never sufficient access control.
+- `server/routes/data-browser-routes.ts` exposes the Drizzle table catalog, typed columns, record details, and bidirectional foreign-key navigation to non-impersonating SUPERADMIN only. Never expose credential values or raw SQL. Master-field edits require an explicit allowlist, validation, optimistic revision checks, and audit; deletion rejects referenced records. Workflow/auth/derived fields stay under their dedicated controllers.
+- `src/components/app-sidebar.tsx` uses the official shadcn sidebar-02 structure. Use actual shadcn Drawer/Dialog primitives for admin overlays.
+- `server/routes/full-demo-routes.ts` builds isolated synthetic academic data and invokes real assessment sync/calculation. Preserve its idempotency and manifest-based reset; never reset unrelated data.
+- `server/routes/outcome-system-routes.ts` owns the normalized curriculum/course outcome model and object-centric workspace contracts.
 - `.data/cqi-evidence/` is non-public runtime storage and must not be committed.
 
 ## Commands
@@ -73,8 +79,16 @@ pnpm build
 - Approval order is GPM then Kaprodi. Preserve atomic decisions, audit history, program scope, and the self-approval prohibition.
 - Grade import is preview-then-commit and atomic. Never overwrite released grades; draft overwrite requires explicit confirmation.
 - CQI evidence is PDF/PNG/JPEG up to 10 MB and is served only through authenticated endpoints.
+- Better Auth impersonation is restricted to domain SUPERADMIN users, requires a reason, cannot target SUPERADMIN or ADMIN_PRODI, expires after 30 minutes, and must retain a visible banner. Audit writes during impersonation include the original administrator profile.
+- Demo reset is manifest-based: delete only the exact IDs created by that scenario. It is not a general database reset facility.
+- Curriculum outcomes, course outcomes, sub-outcomes, and their mappings are normalized records. Preserve calculation-run history; charts must use stored achievements and must render an honest empty state rather than mock values.
+- CPL calculation formula v1 is recorded in run parameters. Do not silently change the formula; a future formula change needs explicit versioning and migration/communication.
+- RPS collection limits are flexible within the schema bounds. Keep editor target IDs stable when allowing row add/remove, and clean dependent mappings when a row is removed.
 
 ## Design direction
+
+- The shared shadcn preset is `bJysiAn4S`: Base Nova, neutral base, sky theme, Geist body, Inter headings, bold menu accent. Keep `components.json`, shared UI components, and CSS tokens aligned; do not reintroduce separate hardcoded workspace colors.
+- `src/platform/WorkspaceHeader.tsx` owns breadcrumbs, program/period filters, and the account menu. Login adapts shadcn login-02 through `src/components/login-form.tsx`; the supplied Unsplash image is decorative and externally loaded, with a solid-blue fallback. Authentication must work if that image is unavailable.
 
 The interface is an academic production workbench, not a generic SaaS landing page.
 

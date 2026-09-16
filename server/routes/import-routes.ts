@@ -118,7 +118,7 @@ export async function registerImportRoutes(app: FastifyInstance) {
           if (!saved) throw new HttpError(409, "Nilai sudah dirilis. Impor dibatalkan.")
         }
       }
-      await writeAudit(tx, { actorProfileId: access.profile.id, action: "IMPORT_COMMITTED", entityType: "class", entityId: id, after: { kind, count: preview.rows.length, overwrite } })
+      await writeAudit(tx, { actorProfileId: access.profile.id, impersonatorProfileId: access.impersonation?.impersonatedByProfileId, action: "IMPORT_COMMITTED", entityType: "class", entityId: id, after: { kind, count: preview.rows.length, overwrite } })
       return { count: preview.rows.length }
     })
   })

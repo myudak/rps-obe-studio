@@ -44,7 +44,7 @@ export async function registerAcademicRoutes(app: FastifyInstance) {
       const roster = await tx.select().from(enrollments).where(eq(enrollments.classId, id))
       if (input.capacity < roster.length) throw new HttpError(409, "Kapasitas lebih kecil dari jumlah peserta.")
       const [updated] = await tx.update(classSections).set({ ...input, updatedAt: new Date() }).where(eq(classSections.id, id)).returning()
-      await writeAudit(tx, { actorProfileId: access.profile.id, action: "CLASS_UPDATED", entityType: "class", entityId: id, after: input }); return updated
+      await writeAudit(tx, { actorProfileId: access.profile.id, impersonatorProfileId: access.impersonation?.impersonatedByProfileId, action: "CLASS_UPDATED", entityType: "class", entityId: id, after: input }); return updated
     })
   })
   app.post("/api/classes/:id/teachers", async request => {
@@ -105,7 +105,7 @@ export async function registerAcademicRoutes(app: FastifyInstance) {
       const { comment, ...values } = input
       const [updated] = await tx.update(cqiFindings).set({ ...values, updatedAt: new Date(), closedAt: input.status === "closed" ? new Date() : null }).where(eq(cqiFindings.id, id)).returning()
       await tx.insert(cqiHistory).values({ cqiId: id, actorProfileId: access.profile.id, status: input.status, comment })
-      await writeAudit(tx, { actorProfileId: access.profile.id, action: "CQI_UPDATED", entityType: "cqi", entityId: id, after: input }); return updated
+      await writeAudit(tx, { actorProfileId: access.profile.id, impersonatorProfileId: access.impersonation?.impersonatedByProfileId, action: "CQI_UPDATED", entityType: "cqi", entityId: id, after: input }); return updated
     })
   })
   app.post("/api/cqi/:id/attachments", async request => {

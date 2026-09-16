@@ -30,6 +30,10 @@ export const user = pgTable("auth_user", {
   email: text("email").notNull().unique(),
   emailVerified: boolean("email_verified").default(false).notNull(),
   image: text("image"),
+  role: text("role").default("user").notNull(),
+  banned: boolean("banned").default(false).notNull(),
+  banReason: text("ban_reason"),
+  banExpires: timestamp("ban_expires", { withTimezone: true }),
   ...timestamps,
 })
 
@@ -40,6 +44,7 @@ export const session = pgTable("auth_session", {
   ipAddress: text("ip_address"),
   userAgent: text("user_agent"),
   userId: text("user_id").notNull().references(() => user.id, { onDelete: "cascade" }),
+  impersonatedBy: text("impersonated_by").references(() => user.id, { onDelete: "set null" }),
   ...timestamps,
 }, (table) => [index("auth_session_user_idx").on(table.userId)])
 
@@ -78,6 +83,8 @@ export const decisionStatus = pgEnum("decision_status", ["pending", "approved", 
 export const runStatus = pgEnum("run_status", ["running", "completed", "failed"])
 export const achievementStatus = pgEnum("achievement_status", ["achieved", "not_achieved", "no_data"])
 export const cqiStatus = pgEnum("cqi_status", ["open", "in_progress", "closed", "pending_review"])
+export const proposalStatus = pgEnum("proposal_status", ["draft", "pending", "approved", "rejected", "implemented"])
+export const demoScenarioStatus = pgEnum("demo_scenario_status", ["active", "reset"])
 
 export const programs = pgTable("program", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -179,6 +186,58 @@ export const curriculumCourses = pgTable("curriculum_course", {
   check("curriculum_course_semester_valid", sql`${table.semester} between 1 and 14`),
 ])
 
+export const curriculumOutcomes = pgTable("curriculum_outcome", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  curriculumId: uuid("curriculum_id").notNull().references(() => curricula.id, { onDelete: "cascade" }),
+  code: text("code").notNull(),
+  name: text("name").notNull(),
+  description: text("description").notNull().default(""),
+  target: numeric("target", { precision: 7, scale: 2 }).notNull().default("70"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  active: boolean("active").notNull().default(true),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex("curriculum_outcome_code_unique").on(table.curriculumId, table.code),
+  index("curriculum_outcome_curriculum_idx").on(table.curriculumId),
+])
+
+export const courseOutcomes = pgTable("course_outcome", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  curriculumCourseId: uuid("curriculum_course_id").notNull().references(() => curriculumCourses.id, { onDelete: "cascade" }),
+  code: text("code").notNull(),
+  description: text("description").notNull(),
+  descriptionEn: text("description_en").notNull().default(""),
+  weight: numeric("weight", { precision: 7, scale: 2 }).notNull().default("0"),
+  target: numeric("target", { precision: 7, scale: 2 }).notNull().default("70"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex("course_outcome_code_unique").on(table.curriculumCourseId, table.code),
+  index("course_outcome_course_idx").on(table.curriculumCourseId),
+])
+
+export const courseOutcomeMappings = pgTable("course_outcome_mapping", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  courseOutcomeId: uuid("course_outcome_id").notNull().references(() => courseOutcomes.id, { onDelete: "cascade" }),
+  curriculumOutcomeId: uuid("curriculum_outcome_id").notNull().references(() => curriculumOutcomes.id, { onDelete: "cascade" }),
+  level: integer("level").notNull().default(1),
+  contribution: numeric("contribution", { precision: 7, scale: 2 }).notNull().default("1"),
+  ...timestamps,
+}, (table) => [
+  uniqueIndex("course_outcome_mapping_unique").on(table.courseOutcomeId, table.curriculumOutcomeId),
+  check("course_outcome_mapping_level_valid", sql`${table.level} between 1 and 3`),
+])
+
+export const subOutcomes = pgTable("sub_outcome", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  courseOutcomeId: uuid("course_outcome_id").notNull().references(() => courseOutcomes.id, { onDelete: "cascade" }),
+  code: text("code").notNull(),
+  description: text("description").notNull(),
+  weight: numeric("weight", { precision: 7, scale: 2 }).notNull().default("0"),
+  sortOrder: integer("sort_order").notNull().default(0),
+  ...timestamps,
+}, (table) => [uniqueIndex("sub_outcome_code_unique").on(table.courseOutcomeId, table.code)])
+
 export const classSections = pgTable("class_section", {
   id: uuid("id").defaultRandom().primaryKey(),
   curriculumCourseId: uuid("curriculum_course_id").notNull().references(() => curriculumCourses.id, { onDelete: "restrict" }),
@@ -253,6 +312,15 @@ export const assessments = pgTable("assessment", {
   uniqueIndex("assessment_rps_code_unique").on(table.rpsId, table.code),
   check("assessment_weight_valid", sql`${table.weight} > 0 and ${table.weight} <= 100`),
 ])
+
+export const assessmentOutcomeMappings = pgTable("assessment_outcome_mapping", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  assessmentId: uuid("assessment_id").notNull().references(() => assessments.id, { onDelete: "cascade" }),
+  courseOutcomeId: uuid("course_outcome_id").notNull().references(() => courseOutcomes.id, { onDelete: "cascade" }),
+  subOutcomeId: uuid("sub_outcome_id").references(() => subOutcomes.id, { onDelete: "set null" }),
+  weight: numeric("weight", { precision: 7, scale: 2 }).notNull().default("1"),
+  ...timestamps,
+}, (table) => [uniqueIndex("assessment_outcome_mapping_unique").on(table.assessmentId, table.courseOutcomeId, table.subOutcomeId)])
 
 export const scores = pgTable("score", {
   id: uuid("id").defaultRandom().primaryKey(),
@@ -341,6 +409,7 @@ export const aiSuggestions = pgTable("ai_suggestion", {
 export const auditLogs = pgTable("audit_log", {
   id: uuid("id").defaultRandom().primaryKey(),
   actorProfileId: uuid("actor_profile_id").references(() => profiles.id, { onDelete: "restrict" }),
+  impersonatorProfileId: uuid("impersonator_profile_id").references(() => profiles.id, { onDelete: "restrict" }),
   action: text("action").notNull(),
   entityType: text("entity_type").notNull(),
   entityId: text("entity_id").notNull(),
@@ -351,6 +420,32 @@ export const auditLogs = pgTable("audit_log", {
   index("audit_entity_idx").on(table.entityType, table.entityId),
   index("audit_actor_idx").on(table.actorProfileId),
 ])
+
+export const curriculumProposals = pgTable("curriculum_proposal", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  curriculumCourseId: uuid("curriculum_course_id").notNull().references(() => curriculumCourses.id, { onDelete: "restrict" }),
+  proposedByProfileId: uuid("proposed_by_profile_id").notNull().references(() => profiles.id, { onDelete: "restrict" }),
+  decidedByProfileId: uuid("decided_by_profile_id").references(() => profiles.id, { onDelete: "restrict" }),
+  title: text("title").notNull(),
+  rationale: text("rationale").notNull(),
+  changes: jsonb("changes").$type<Record<string, unknown>>().notNull().default({}),
+  impact: jsonb("impact").$type<Record<string, unknown>>().notNull().default({}),
+  status: proposalStatus("status").notNull().default("draft"),
+  decisionComment: text("decision_comment").notNull().default(""),
+  decidedAt: timestamp("decided_at", { withTimezone: true }),
+  ...timestamps,
+}, (table) => [index("curriculum_proposal_course_idx").on(table.curriculumCourseId)])
+
+export const demoScenarios = pgTable("demo_scenario", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  key: text("key").notNull(),
+  label: text("label").notNull(),
+  createdByProfileId: uuid("created_by_profile_id").notNull().references(() => profiles.id, { onDelete: "restrict" }),
+  manifest: jsonb("manifest").$type<Record<string, string[]>>().notNull().default({}),
+  status: demoScenarioStatus("status").notNull().default("active"),
+  resetAt: timestamp("reset_at", { withTimezone: true }),
+  ...timestamps,
+}, (table) => [index("demo_scenario_status_idx").on(table.status)])
 
 export const authSchema = { user, session, account, verification }
 

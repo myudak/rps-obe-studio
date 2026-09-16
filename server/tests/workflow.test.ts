@@ -41,16 +41,17 @@ test("PostgreSQL academic workflow and access boundaries", async () => {
   const [course] = await db.insert(s.courses).values({ programId: program!.id, code: suffix, name: "Test course", credits: 3 }).returning()
   const [placement] = await db.insert(s.curriculumCourses).values({ curriculumId: curriculum!.id, courseId: course!.id, semester: 1 }).returning()
   const actors: Record<string, { cookie: string; profileId: string }> = {}
-  async function request(actor: string, method: "GET" | "POST" | "PUT" | "PATCH", url: string, payload?: unknown, expected = 200, headers: Record<string, string> = {}) {
+  async function request(actor: string, method: "GET" | "POST" | "PUT" | "PATCH" | "DELETE", url: string, payload?: unknown, expected = 200, headers: Record<string, string> = {}) {
     const response = await app.inject({ method, url, headers: { origin: env.clientOrigin, ...(actor ? { cookie: actors[actor]!.cookie } : {}), ...headers }, ...(payload === undefined ? {} : { payload: payload as Record<string, unknown> }) })
     assert.equal(response.statusCode, expected, `${method} ${url}: ${response.body.slice(0, 300)}`)
     return response
   }
   try {
-    for (const role of ["ADMIN_PRODI", "DOSEN_PENGAMPU", "GPM", "KAPRODI", "MAHASISWA", "OUTSIDER"]) {
+    for (const role of ["SUPERADMIN", "ADMIN_PRODI", "DOSEN_PENGAMPU", "GPM", "KAPRODI", "MAHASISWA", "OUTSIDER"]) {
       const email = `${role.toLowerCase()}-${suffix}@test.local`; const password = `Test-${suffix}-secure!`
       await auth.api.signUpEmail({ body: { name: `Test ${role}`, email, password } })
       const [user] = await db.select().from(s.user).where(eq(s.user.email, email))
+      if (role === "SUPERADMIN") await db.update(s.user).set({ role: "admin" }).where(eq(s.user.id, user!.id))
       const [profile] = await db.insert(s.profiles).values({ userId: user!.id }).returning()
       const code = role === "OUTSIDER" ? "GPM" : role
       await db.insert(s.roles).values({ code, name: code }).onConflictDoNothing()
@@ -121,6 +122,24 @@ test("PostgreSQL academic workflow and access boundaries", async () => {
     await request("DOSEN_PENGAMPU", "PUT", "/api/scores", { enrollmentId: outcomes.enrollments[0].id, assessmentId: outcomes.assessments[0].id, rawScore: 99 }, 409)
     assert.equal((await preview("scores", `nim,kode_assessment,nilai\n${nim},A1,99\n`)).valid, false)
     await request("DOSEN_PENGAMPU", "POST", `/api/classes/${id}/calculate`)
+    const calculated = (await request("DOSEN_PENGAMPU", "GET", `/api/classes/${id}/outcomes`)).json()
+    assert.ok(calculated.achievements.some((item: { scope: string }) => item.scope === "class-cpl"), "CPL roll-up should be stored")
+    const curriculumWorkspace = (await request("GPM", "GET", `/api/curricula/${curriculum!.id}/workspace`)).json()
+    assert.ok(curriculumWorkspace.outcomes.length >= 6)
+    assert.ok(curriculumWorkspace.mappings.length > 0)
+    const courseWorkspace = (await request("DOSEN_PENGAMPU", "GET", `/api/course-workspaces/${placement!.id}`)).json()
+    assert.ok(courseWorkspace.outcomes.length >= 6)
+    await request("DOSEN_PENGAMPU", "POST", `/api/course-outcomes/${courseWorkspace.outcomes[0].id}/sub-outcomes`, { code: `SUB-${suffix}`, description: "First-class integration sub outcome", weight: 100, sortOrder: 1 }, 201)
+    const proposal = (await request("DOSEN_PENGAMPU", "POST", `/api/course-workspaces/${placement!.id}/proposals`, { title: "Improve outcome alignment", rationale: "Assessment evidence indicates a curriculum adjustment is needed.", changes: { cpmk: "updated" } }, 201)).json()
+    assert.equal(proposal.impact.activeClasses, 1)
+    await request("DOSEN_PENGAMPU", "POST", `/api/curriculum-proposals/${proposal.id}/decision`, { decision: "approved", comment: "Self approval denied" }, 403)
+    await request("GPM", "POST", `/api/curriculum-proposals/${proposal.id}/decision`, { decision: "approved", comment: "Alignment has been reviewed" })
+    await request("KAPRODI", "POST", `/api/curriculum-proposals/${proposal.id}/decision`, { decision: "implemented", comment: "Approved change implemented" })
+    const [nextPeriod] = await db.insert(s.periods).values({ code: `NEXT-${suffix}`, name: "Next test period", startsOn: "2100-01-01", endsOn: "2100-06-30" }).returning()
+    const [nextClass] = await db.insert(s.classSections).values({ curriculumCourseId: placement!.id, cohortId: cohort!.id, periodId: nextPeriod!.id, code: `NEXT-${suffix}`, name: "Next class", capacity: 3 }).returning()
+    await request("ADMIN_PRODI", "POST", `/api/classes/${nextClass!.id}/teachers`, { profileId: actors.DOSEN_PENGAMPU!.profileId })
+    const carried = (await request("DOSEN_PENGAMPU", "POST", `/api/classes/${nextClass!.id}/rps/carry-forward`, undefined, 201)).json()
+    assert.equal(carried.status, "draft")
     const findings = (await request("GPM", "GET", "/api/cqi")).json(); const finding = findings.find((row: { classId: string }) => row.classId === id).finding
     const update = { analysis: "Temuan integration", actionPlan: "Remedial dan evaluasi metode", ownerProfileId: actors.DOSEN_PENGAMPU!.profileId, dueOn: "2099-06-01", status: "in_progress" }
     await request("DOSEN_PENGAMPU", "PATCH", `/api/cqi/${finding.id}`, update)
@@ -143,6 +162,55 @@ test("PostgreSQL academic workflow and access boundaries", async () => {
     const studentOutcomes = (await request("MAHASISWA", "GET", `/api/classes/${id}/outcomes`)).json()
     assert.equal(studentOutcomes.enrollments.length, 1); assert.ok(studentOutcomes.scores.every((row: { status: string }) => row.status === "released")); assert.equal(studentOutcomes.cqi.length, 0)
     await request("", "GET", `/api/attachments/${randomUUID()}`, undefined, 401)
+    const catalog = (await request("SUPERADMIN", "GET", "/api/admin/database")).json()
+    assert.ok(catalog.tables.length >= 35)
+    await request("DOSEN_PENGAMPU", "GET", "/api/admin/database", undefined, 403)
+    await request("", "GET", "/api/admin/database", undefined, 401)
+    await request("SUPERADMIN", "GET", "/api/admin/database/not_a_table", undefined, 404)
+    await request("SUPERADMIN", "GET", "/api/admin/database/program?sort=bad_column", undefined, 400)
+    const authRows = (await request("SUPERADMIN", "GET", "/api/admin/database/auth_account")).json().rows
+    assert.ok(authRows.every((row: Record<string, unknown>) => !("password" in row) && !("access_token" in row)))
+    const record = (await request("SUPERADMIN", "GET", `/api/admin/database/program/${program!.id}`)).json()
+    assert.ok(record.links.some((link: { target: string; count: number }) => link.target === "curriculum" && link.count > 0))
+    await request("SUPERADMIN", "PATCH", `/api/admin/database/program/${program!.id}`, { revision: record.revision, changes: { name: "Updated integration program" } })
+    await request("SUPERADMIN", "PATCH", `/api/admin/database/program/${program!.id}`, { revision: record.revision, changes: { name: "Stale" } }, 409)
+    const fresh = (await request("SUPERADMIN", "GET", `/api/admin/database/program/${program!.id}`)).json()
+    await request("SUPERADMIN", "DELETE", `/api/admin/database/program/${program!.id}`, { revision: fresh.revision }, 409)
+    await request("SUPERADMIN", "PATCH", `/api/admin/database/program/${program!.id}`, { revision: fresh.revision, changes: { id: "bad" } }, 400)
+    const disposable = (await db.insert(s.programs).values({ code: `DEL-${suffix}`, name: "Delete fixture", faculty: "Test" }).returning())[0]!
+    const deleteRecord = (await request("SUPERADMIN", "GET", `/api/admin/database/program/${disposable.id}`)).json()
+    await request("SUPERADMIN", "DELETE", `/api/admin/database/program/${disposable.id}`, { revision: deleteRecord.revision })
+    await request("SUPERADMIN", "GET", `/api/admin/database/program/${disposable.id}`, undefined, 404)
+    const fullDemo = (await request("SUPERADMIN", "POST", "/api/admin/demo/full", {})).json()
+    assert.equal(fullDemo.classes, 12)
+    const fullScenario = (await request("SUPERADMIN", "GET", "/api/admin/studio")).json().scenarios.find((item: { key: string; status: string }) => item.key === "full-academic" && item.status === "active")
+    assert.equal(fullScenario.manifest.scores.length, 576)
+    assert.equal(fullScenario.manifest.calculationRuns.length, 8)
+    assert.ok(fullScenario.manifest.achievements.length > 0)
+    assert.equal((await request("SUPERADMIN", "POST", "/api/admin/demo/full", {})).json().existing, true)
+    await request("SUPERADMIN", "DELETE", `/api/admin/demo-scenarios/${fullScenario.id}`)
+    await request("SUPERADMIN", "GET", `/api/admin/database/class_section/${fullScenario.manifest.classSections[0]}`, undefined, 404)
+    const studio = (await request("SUPERADMIN", "GET", "/api/admin/studio")).json()
+    assert.equal(studio.database.connected, true); assert.ok(studio.database.tables.length > 10)
+    await request("ADMIN_PRODI", "GET", "/api/admin/studio", undefined, 403)
+    const managedUserEmail = `managed-${suffix}@test.local`
+    const managed = (await request("SUPERADMIN", "POST", "/api/admin/users", { name: "Managed Test User", email: managedUserEmail, password: `Managed-${suffix}!`, staffOrStudentId: `M-${suffix}`, roles: [{ roleCode: "GPM", programId: program!.id }] }, 201)).json()
+    await request("SUPERADMIN", "PATCH", `/api/admin/users/${managed.id}`, { name: "Managed Test User Updated", email: managedUserEmail, staffOrStudentId: `M-${suffix}`, status: "active", banned: false })
+    await request("SUPERADMIN", "PUT", `/api/admin/users/${managed.id}/roles`, { roles: [{ roleCode: "KAPRODI", programId: program!.id }] })
+    await request("SUPERADMIN", "POST", "/api/admin/demo-scenarios", { key: "cqi-gap" }, 201)
+    const scenario = (await request("SUPERADMIN", "GET", "/api/admin/studio")).json().scenarios.find((item: { key: string; status: string }) => item.key === "cqi-gap" && item.status === "active")
+    assert.ok(scenario)
+    await request("SUPERADMIN", "DELETE", `/api/admin/demo-scenarios/${scenario.id}`)
+    const [lecturerAuthUser] = await db.select({ id: s.user.id }).from(s.user).innerJoin(s.profiles, eq(s.profiles.userId, s.user.id)).where(eq(s.profiles.id, actors.DOSEN_PENGAMPU!.profileId))
+    const impersonated = await request("SUPERADMIN", "POST", "/api/auth/admin/impersonate-user", { userId: lecturerAuthUser!.id }, 200, { "x-impersonation-reason": "Verify lecturer access" })
+    const impersonatedCookies = new Map(impersonated.cookies.map(cookie => [cookie.name, cookie.value]))
+    const impersonatedCookie = [...impersonatedCookies].map(([name, value]) => `${name}=${value}`).join("; ")
+    const impersonatedMe = await app.inject({ method: "GET", url: "/api/me", headers: { cookie: impersonatedCookie } })
+    assert.equal(impersonatedMe.statusCode, 200, `impersonation cookies=${JSON.stringify(impersonated.cookies)} body=${impersonatedMe.body}`); assert.equal(impersonatedMe.json().user.id, lecturerAuthUser!.id); assert.equal(impersonatedMe.json().impersonation.impersonatedByName, `Test SUPERADMIN`)
+    const stopped = await app.inject({ method: "POST", url: "/api/auth/admin/stop-impersonating", headers: { cookie: impersonatedCookie, origin: env.clientOrigin } })
+    assert.equal(stopped.statusCode, 200, stopped.body)
+    const adminProdiUser = (await db.select({ id: s.user.id }).from(s.user).innerJoin(s.profiles, eq(s.profiles.userId, s.user.id)).where(eq(s.profiles.id, actors.ADMIN_PRODI!.profileId)))[0]!
+    await request("SUPERADMIN", "POST", "/api/auth/admin/impersonate-user", { userId: adminProdiUser.id }, 403, { "x-impersonation-reason": "Should be denied" })
     await request("GPM", "POST", "/api/auth/sign-out")
     await request("GPM", "GET", "/api/platform", undefined, 401)
   } finally { await app.close(); await closeDatabase() }

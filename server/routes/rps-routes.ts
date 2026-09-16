@@ -78,7 +78,7 @@ export async function registerRpsRoutes(app: FastifyInstance) {
       authorProfileId: access.profile.id,
     }).returning()
     if (!created) throw new Error("RPS gagal dibuat.")
-    await writeAudit(db, { actorProfileId: access.profile.id, action: "RPS_CREATED", entityType: "rps", entityId: created.id, after: { status: created.status, version: created.version } })
+    await writeAudit(db, { actorProfileId: access.profile.id, impersonatorProfileId: access.impersonation?.impersonatedByProfileId, action: "RPS_CREATED", entityType: "rps", entityId: created.id, after: { status: created.status, version: created.version } })
     return reply.status(201).send(created)
   })
 
@@ -115,7 +115,7 @@ export async function registerRpsRoutes(app: FastifyInstance) {
       if (!updated) throw new HttpError(409, "Status RPS berubah. Muat ulang lalu coba lagi.")
       const [previous] = await tx.select().from(approvals).where(eq(approvals.rpsId, id)).orderBy(desc(approvals.round)).limit(1)
       await tx.insert(approvals).values({ rpsId: id, submittedByProfileId: access.profile.id, round: (previous?.round ?? 0) + 1, stage: "GPM" })
-      await writeAudit(tx, { actorProfileId: access.profile.id, action: "RPS_SUBMITTED", entityType: "rps", entityId: id, before: { status: existing.status }, after: { status: "submitted" } })
+      await writeAudit(tx, { actorProfileId: access.profile.id, impersonatorProfileId: access.impersonation?.impersonatedByProfileId, action: "RPS_SUBMITTED", entityType: "rps", entityId: id, before: { status: existing.status }, after: { status: "submitted" } })
       return updated
     })
   })

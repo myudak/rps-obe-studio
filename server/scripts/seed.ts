@@ -29,13 +29,16 @@ async function firstOrCreate<T>(find: () => Promise<T[]>, create: () => Promise<
   return created[0]
 }
 
-async function ensureUser(input: { name: string; email: string; password: string; staffId: string }) {
+async function ensureUser(input: { name: string; email: string; password: string; staffId: string; authRole?: "admin" | "user" }) {
   let [authUser] = await db.select().from(user).where(eq(user.email, input.email)).limit(1)
   if (!authUser) {
     await auth.api.signUpEmail({ body: { name: input.name, email: input.email, password: input.password } })
     ;[authUser] = await db.select().from(user).where(eq(user.email, input.email)).limit(1)
   }
   if (!authUser) throw new Error(`User ${input.email} gagal dibuat.`)
+  if (authUser.role !== (input.authRole ?? "user")) {
+    ;[authUser] = await db.update(user).set({ role: input.authRole ?? "user", updatedAt: new Date() }).where(eq(user.id, authUser.id)).returning()
+  }
   const profile = await firstOrCreate(
     () => db.select().from(profiles).where(eq(profiles.userId, authUser.id)).limit(1),
     () => db.insert(profiles).values({ userId: authUser.id, staffOrStudentId: input.staffId }).returning(),
@@ -92,7 +95,7 @@ async function main() {
   )
 
   const demoUsers = [
-    { name: "Admin OBE", email: "admin@rps.local", password: "Admin123!", staffId: "ADMIN-001", role: "SUPERADMIN", programId: null },
+    { name: "Admin OBE", email: "admin@rps.local", password: "Admin123!", staffId: "ADMIN-001", authRole: "admin", role: "SUPERADMIN", programId: null },
     { name: "Dosen Demo", email: "dosen@rps.local", password: "Dosen123!", staffId: "19880001", role: "DOSEN_PENGAMPU", programId: program.id },
     { name: "GPM Demo", email: "gpm@rps.local", password: "GpmDemo123!", staffId: "GPM-001", role: "GPM", programId: program.id },
     { name: "Mahasiswa Demo", email: "mahasiswa@rps.local", password: "Mahasiswa123!", staffId: "24060125120001", role: "MAHASISWA", programId: program.id },

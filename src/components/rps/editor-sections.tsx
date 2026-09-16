@@ -9,6 +9,7 @@ import { targetDomProps } from "@/lib/editor-targets"
 import type { AiTask } from "@/lib/openrouter"
 import { CPL_KEYS, detectBloom, type CplKey, type MappingLevel, type RpsMeta } from "@/schemas/rps-schema"
 import { useRpsStore } from "@/stores/rps-store"
+import { Plus, Trash2 } from "lucide-react"
 
 type AiHandler = (task: AiTask) => void
 
@@ -36,7 +37,7 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
 }
 
 export function IdentitySection({ onAi }: { onAi: AiHandler }) {
-  const { data, updateMeta, updateReferences } = useRpsStore()
+  const { data, updateMeta, updateReferences, addReference, removeReference } = useRpsStore()
   const fields: Array<{ key: keyof RpsMeta; label: string; type?: string }> = [
     { key: "institution", label: "Universitas / Institusi" }, { key: "faculty", label: "Fakultas / Sekolah" },
     { key: "program", label: "Program Studi" }, { key: "courseName", label: "Nama Mata Kuliah" },
@@ -63,14 +64,14 @@ export function IdentitySection({ onAi }: { onAi: AiHandler }) {
     <Card className="mt-5">
       <CardHeader><CardTitle>Referensi</CardTitle><CardDescription>AI tidak memverifikasi buku atau DOI. Pastikan setiap sumber benar-benar ada.</CardDescription></CardHeader>
       <CardContent className="grid gap-6 lg:grid-cols-2">
-        {(["main", "additional"] as const).map((kind) => <div key={kind} className="space-y-3"><div className="text-sm font-medium">{kind === "main" ? "Referensi utama" : "Referensi pendukung"}</div>{data.references[kind].map((reference, index) => <Input {...targetDomProps(`references.${kind}.${index + 1}`)} key={index} value={reference} placeholder={`${index + 1}. Penulis. Judul. Tahun.`} onChange={(event) => updateReferences(kind, index, event.target.value)} />)}</div>)}
+        {(["main", "additional"] as const).map((kind) => <div key={kind} className="space-y-3"><div className="text-sm font-medium">{kind === "main" ? "Referensi utama" : "Referensi pendukung"}</div>{data.references[kind].map((reference, index) => <div className="flex gap-2" key={index}><Input {...targetDomProps(`references.${kind}.${index + 1}`)} value={reference} placeholder={`${index + 1}. Penulis. Judul. Tahun.`} onChange={(event) => updateReferences(kind, index, event.target.value)} /><Button type="button" size="icon-sm" variant="ghost" aria-label={`Hapus referensi ${index + 1}`} onClick={() => removeReference(kind, index)}><Trash2 /></Button></div>)}<Button type="button" size="sm" variant="outline" onClick={() => addReference(kind)}><Plus /> Tambah referensi</Button></div>)}
       </CardContent>
     </Card>
   </div>
 }
 
 export function OutcomesSection({ onAi }: { onAi: AiHandler }) {
-  const { data, updateCpl, updateCpmk } = useRpsStore()
+  const { data, updateCpl, updateCpmk, addCpmk, removeCpmk } = useRpsStore()
   const cycleMap = (index: number, key: CplKey) => {
     const current = data.cpmk[index]
     const next = ((current.maps[key] + 1) % 4) as MappingLevel
@@ -87,7 +88,8 @@ export function OutcomesSection({ onAi }: { onAi: AiHandler }) {
     <Card className="mt-5">
       <CardHeader><CardTitle>CPMK / CLO</CardTitle><CardDescription>Total bobot harus 100%. Badge Bloom dibaca dari kata kerja rumusan.</CardDescription><CardAction><Badge variant="outline">{data.cpmk.reduce((total, item) => total + item.weight, 0)}%</Badge></CardAction></CardHeader>
       <CardContent className="space-y-4">
-        {data.cpmk.map((item, index) => <div key={item.code} className="border-b py-4 last:border-b-0"><div className="mb-3 flex items-center gap-2"><Input {...targetDomProps(`cpmk.${index + 1}.code`)} className="max-w-28 font-semibold" value={item.code} onChange={(event) => updateCpmk(index, { code: event.target.value })} /><Badge variant={detectBloom(item.text) === "?" ? "destructive" : "secondary"}>{detectBloom(item.text)}</Badge><div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">Bobot <Input {...targetDomProps(`cpmk.${index + 1}.weight`)} className="w-20" type="number" min={0} max={100} value={item.weight} onChange={(event) => updateCpmk(index, { weight: Number(event.target.value) })} />%</div></div><div className="grid gap-3 lg:grid-cols-2"><Textarea {...targetDomProps(`cpmk.${index + 1}.text`)} value={item.text} placeholder="Rumusan CPMK terukur..." onChange={(event) => updateCpmk(index, { text: event.target.value })} /><Textarea {...targetDomProps(`cpmk.${index + 1}.en`)} value={item.en} placeholder="English CLO..." onChange={(event) => updateCpmk(index, { en: event.target.value })} /></div></div>)}
+        {data.cpmk.map((item, index) => <div key={`${item.code}-${index}`} className="border-b py-4 last:border-b-0"><div className="mb-3 flex items-center gap-2"><Input {...targetDomProps(`cpmk.${index + 1}.code`)} className="max-w-28 font-semibold" value={item.code} onChange={(event) => updateCpmk(index, { code: event.target.value })} /><Badge variant={detectBloom(item.text) === "?" ? "destructive" : "secondary"}>{detectBloom(item.text)}</Badge><div className="ml-auto flex items-center gap-2 text-xs text-muted-foreground">Bobot <Input {...targetDomProps(`cpmk.${index + 1}.weight`)} className="w-20" type="number" min={0} max={100} value={item.weight} onChange={(event) => updateCpmk(index, { weight: Number(event.target.value) })} />%</div><Button type="button" size="icon-sm" variant="ghost" disabled={data.cpmk.length <= 1} aria-label={`Hapus ${item.code}`} onClick={() => removeCpmk(index)}><Trash2 /></Button></div><div className="grid gap-3 lg:grid-cols-2"><Textarea {...targetDomProps(`cpmk.${index + 1}.text`)} value={item.text} placeholder="Rumusan CPMK terukur..." onChange={(event) => updateCpmk(index, { text: event.target.value })} /><Textarea {...targetDomProps(`cpmk.${index + 1}.en`)} value={item.en} placeholder="English CLO..." onChange={(event) => updateCpmk(index, { en: event.target.value })} /></div></div>)}
+        <Button type="button" variant="outline" disabled={data.cpmk.length >= 20} onClick={addCpmk}><Plus /> Tambah CPMK</Button>
       </CardContent>
     </Card>
     <Card className="mt-5">
@@ -109,7 +111,7 @@ export function ScheduleSection({ onAi }: { onAi: AiHandler }) {
 }
 
 export function AssessmentSection({ onAi }: { onAi: AiHandler }) {
-  const { data, updateAssessment, updateRubric } = useRpsStore()
+  const { data, updateAssessment, updateRubric, addAssessment, removeAssessment, addRubric, removeRubric } = useRpsStore()
   const toggleCpmk = (assessmentIndex: number, code: string, checked: boolean) => {
     const current = data.assessments[assessmentIndex]
     updateAssessment(assessmentIndex, { cpmk: checked ? [...new Set([...current.cpmk, code])] : current.cpmk.filter((item) => item !== code) })
@@ -118,11 +120,11 @@ export function AssessmentSection({ onAi }: { onAi: AiHandler }) {
     <SectionHeading title="Assessment & rubrik" description="Bobot dihitung oleh aplikasi. AI hanya menyiapkan draft instrumen dan deskriptor yang tetap harus diperiksa dosen." task="assessment" onAi={onAi} />
     <Card>
       <CardHeader><CardTitle>Rencana evaluasi</CardTitle><CardDescription>Centang CPMK yang benar-benar diukur oleh setiap metode.</CardDescription><CardAction><Badge variant="outline">{data.assessments.reduce((total, item) => total + item.weight, 0)}%</Badge></CardAction></CardHeader>
-      <CardContent><div className="overflow-x-auto"><table className="editor-table min-w-[920px]"><thead><tr><th>Metode</th><th className="w-24">Bobot</th><th>CPMK yang diukur</th><th>Catatan</th></tr></thead><tbody>{data.assessments.map((item, index) => <tr key={index}><td><Input {...targetDomProps(`assessment.${index + 1}.name`)} value={item.name} onChange={(event) => updateAssessment(index, { name: event.target.value })} /></td><td><Input {...targetDomProps(`assessment.${index + 1}.weight`)} type="number" min={0} max={100} value={item.weight} onChange={(event) => updateAssessment(index, { weight: Number(event.target.value) })} /></td><td><div {...targetDomProps(`assessment.${index + 1}.cpmk`)} className="flex min-w-96 flex-wrap gap-2">{data.cpmk.map((cpmk) => <label key={cpmk.code} className={`mapping-pill ${item.cpmk.includes(cpmk.code) ? "active" : ""}`}><input type="checkbox" checked={item.cpmk.includes(cpmk.code)} onChange={(event) => toggleCpmk(index, cpmk.code, event.target.checked)} />{cpmk.code}</label>)}</div></td><td><Input {...targetDomProps(`assessment.${index + 1}.notes`)} value={item.notes} onChange={(event) => updateAssessment(index, { notes: event.target.value })} /></td></tr>)}</tbody></table></div></CardContent>
+      <CardContent><div className="overflow-x-auto"><table className="editor-table min-w-[920px]"><thead><tr><th>Metode</th><th className="w-24">Bobot</th><th>CPMK yang diukur</th><th>Catatan</th><th /></tr></thead><tbody>{data.assessments.map((item, index) => <tr key={index}><td><Input {...targetDomProps(`assessment.${index + 1}.name`)} value={item.name} onChange={(event) => updateAssessment(index, { name: event.target.value })} /></td><td><Input {...targetDomProps(`assessment.${index + 1}.weight`)} type="number" min={0} max={100} value={item.weight} onChange={(event) => updateAssessment(index, { weight: Number(event.target.value) })} /></td><td><div {...targetDomProps(`assessment.${index + 1}.cpmk`)} className="flex min-w-96 flex-wrap gap-2">{data.cpmk.map((cpmk) => <label key={cpmk.code} className={`mapping-pill ${item.cpmk.includes(cpmk.code) ? "active" : ""}`}><input type="checkbox" checked={item.cpmk.includes(cpmk.code)} onChange={(event) => toggleCpmk(index, cpmk.code, event.target.checked)} />{cpmk.code}</label>)}</div></td><td><Input {...targetDomProps(`assessment.${index + 1}.notes`)} value={item.notes} onChange={(event) => updateAssessment(index, { notes: event.target.value })} /></td><td><Button type="button" size="icon-sm" variant="ghost" disabled={data.assessments.length <= 1} aria-label={`Hapus assessment ${index + 1}`} onClick={() => removeAssessment(index)}><Trash2 /></Button></td></tr>)}</tbody></table></div><Button className="mt-4" type="button" variant="outline" disabled={data.assessments.length >= 30} onClick={addAssessment}><Plus /> Tambah assessment</Button></CardContent>
     </Card>
     <Card className="mt-5">
-      <CardHeader><CardTitle>Rubrik analitik</CardTitle><CardDescription>Lima kriteria, masing-masing dengan deskriptor performa 4–1.</CardDescription></CardHeader>
-      <CardContent><div className="overflow-x-auto"><table className="editor-table min-w-[1200px]"><thead><tr><th>Kriteria</th><th className="w-28">CPMK</th><th className="w-20">Bobot</th><th>4 — Sangat Baik</th><th>3 — Baik</th><th>2 — Cukup</th><th>1 — Kurang</th></tr></thead><tbody>{data.rubrics.map((item, index) => <tr key={index}><td><Input {...targetDomProps(`rubric.${index + 1}.criterion`)} value={item.criterion} onChange={(event) => updateRubric(index, { criterion: event.target.value })} /></td><td><select {...targetDomProps(`rubric.${index + 1}.cpmk`)} className={selectClass} value={item.cpmk} onChange={(event) => updateRubric(index, { cpmk: event.target.value })}>{data.cpmk.map((cpmk) => <option key={cpmk.code}>{cpmk.code}</option>)}</select></td><td><Input {...targetDomProps(`rubric.${index + 1}.weight`)} type="number" value={item.weight} onChange={(event) => updateRubric(index, { weight: Number(event.target.value) })} /></td>{(["level4", "level3", "level2", "level1"] as const).map((key) => <td key={key}><Textarea {...targetDomProps(`rubric.${index + 1}.${key}`)} className="min-h-24 min-w-40" value={item[key]} onChange={(event) => updateRubric(index, { [key]: event.target.value })} /></td>)}</tr>)}</tbody></table></div></CardContent>
+      <CardHeader><CardTitle>Rubrik analitik</CardTitle><CardDescription>Tambahkan kriteria sesuai instrumen; setiap kriteria memiliki deskriptor performa 4–1.</CardDescription></CardHeader>
+      <CardContent><div className="overflow-x-auto"><table className="editor-table min-w-[1200px]"><thead><tr><th>Kriteria</th><th className="w-28">CPMK</th><th className="w-20">Bobot</th><th>4 — Sangat Baik</th><th>3 — Baik</th><th>2 — Cukup</th><th>1 — Kurang</th><th /></tr></thead><tbody>{data.rubrics.map((item, index) => <tr key={index}><td><Input {...targetDomProps(`rubric.${index + 1}.criterion`)} value={item.criterion} onChange={(event) => updateRubric(index, { criterion: event.target.value })} /></td><td><select {...targetDomProps(`rubric.${index + 1}.cpmk`)} className={selectClass} value={item.cpmk} onChange={(event) => updateRubric(index, { cpmk: event.target.value })}>{data.cpmk.map((cpmk) => <option key={cpmk.code}>{cpmk.code}</option>)}</select></td><td><Input {...targetDomProps(`rubric.${index + 1}.weight`)} type="number" value={item.weight} onChange={(event) => updateRubric(index, { weight: Number(event.target.value) })} /></td>{(["level4", "level3", "level2", "level1"] as const).map((key) => <td key={key}><Textarea {...targetDomProps(`rubric.${index + 1}.${key}`)} className="min-h-24 min-w-40" value={item[key]} onChange={(event) => updateRubric(index, { [key]: event.target.value })} /></td>)}<td><Button type="button" size="icon-sm" variant="ghost" disabled={data.rubrics.length <= 1} aria-label={`Hapus rubrik ${index + 1}`} onClick={() => removeRubric(index)}><Trash2 /></Button></td></tr>)}</tbody></table></div><Button className="mt-4" type="button" variant="outline" disabled={data.rubrics.length >= 30} onClick={addRubric}><Plus /> Tambah kriteria</Button></CardContent>
     </Card>
   </div>
 }

@@ -1,5 +1,6 @@
 import { drizzleAdapter } from "@better-auth/drizzle-adapter"
 import { betterAuth } from "better-auth"
+import { admin } from "better-auth/plugins"
 
 import { db } from "./db/client.ts"
 import { authSchema } from "./db/schema.ts"
@@ -19,6 +20,11 @@ export const auth = betterAuth({
     enabled: true,
     minPasswordLength: 8,
   },
+  plugins: [admin({
+    defaultRole: "user",
+    adminRoles: ["admin"],
+    impersonationSessionDuration: 30 * 60,
+  })],
   advanced: {
     database: {
       joins: false,
@@ -26,4 +32,3 @@ export const auth = betterAuth({
     useSecureCookies: false,
   },
 })
-

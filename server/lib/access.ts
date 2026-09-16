@@ -4,12 +4,13 @@ import { fromNodeHeaders } from "better-auth/node"
 
 import { auth } from "../auth.ts"
 import { db } from "../db/client.ts"
-import { enrollments, profiles, programs, roles, students, teachingAssignments, userRoles } from "../db/schema.ts"
+import { enrollments, profiles, programs, roles, students, teachingAssignments, user, userRoles } from "../db/schema.ts"
 
 export type AccessContext = {
   user: { id: string; name: string; email: string }
   profile: { id: string; status: "active" | "inactive" }
   roles: Array<{ code: string; name: string; programId: string | null; programName: string | null }>
+  impersonation: null | { impersonatedByUserId: string; impersonatedByProfileId: string; impersonatedByName: string }
 }
 
 export class HttpError extends Error {
@@ -39,10 +40,16 @@ export async function getAccessContext(request: FastifyRequest): Promise<AccessC
     .leftJoin(programs, eq(userRoles.programId, programs.id))
     .where(eq(userRoles.profileId, profile.id))
 
+  const impersonatedBy = (session.session as typeof session.session & { impersonatedBy?: string | null }).impersonatedBy ?? null
+  const [originalAdmin] = impersonatedBy
+    ? await db.select({ id: user.id, profileId: profiles.id, name: user.name }).from(user).innerJoin(profiles, eq(profiles.userId, user.id)).where(eq(user.id, impersonatedBy)).limit(1)
+    : []
+
   return {
     user: { id: session.user.id, name: session.user.name, email: session.user.email },
     profile,
     roles: assignedRoles,
+    impersonation: originalAdmin ? { impersonatedByUserId: originalAdmin.id, impersonatedByProfileId: originalAdmin.profileId, impersonatedByName: originalAdmin.name } : null,
   }
 }
 

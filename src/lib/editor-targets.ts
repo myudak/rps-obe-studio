@@ -71,14 +71,14 @@ function makeDefinitions(): EditorTargetDefinition[] {
     definitions.push({ id: `cpl.${key}.description`, label: `CPL (${key}) — deskripsi`, step: "outcomes", valueType: "string" })
     definitions.push({ id: `cpl.${key}.en`, label: `CPL (${key}) — English`, step: "outcomes", valueType: "string" })
   })
-  for (let position = 1; position <= 6; position += 1) {
+  for (let position = 1; position <= 20; position += 1) {
     definitions.push({ id: `cpmk.${position}.code`, label: `CPMK ${position} — kode`, step: "outcomes", valueType: "string" })
     definitions.push({ id: `cpmk.${position}.text`, label: `CPMK ${position} — rumusan`, step: "outcomes", valueType: "string" })
     definitions.push({ id: `cpmk.${position}.en`, label: `CPMK ${position} — English`, step: "outcomes", valueType: "string" })
     definitions.push({ id: `cpmk.${position}.weight`, label: `CPMK ${position} — bobot`, step: "outcomes", valueType: "number" })
     CPL_KEYS.forEach((key) => definitions.push({ id: `cpmk.${position}.maps.${key}`, label: `Mapping CPMK ${position} ke CPL (${key})`, step: "outcomes", valueType: "number" }))
   }
-  for (let position = 1; position <= 3; position += 1) {
+  for (let position = 1; position <= 20; position += 1) {
     definitions.push({ id: `references.main.${position}`, label: `Referensi utama ${position}`, step: "identity", valueType: "string" })
     definitions.push({ id: `references.additional.${position}`, label: `Referensi pendukung ${position}`, step: "identity", valueType: "string" })
   }
@@ -87,12 +87,12 @@ function makeDefinitions(): EditorTargetDefinition[] {
       definitions.push({ id: `schedule.${week}.${key}`, label: `Minggu ${week} — ${label}`, step: "schedule", valueType: "string" })
     }
   }
-  for (let position = 1; position <= 6; position += 1) {
+  for (let position = 1; position <= 30; position += 1) {
     for (const [key, label] of Object.entries(assessmentLabels)) {
       definitions.push({ id: `assessment.${position}.${key}`, label: `Assessment ${position} — ${label}`, step: "assessment", valueType: key === "weight" ? "number" : key === "cpmk" ? "string-array" : "string" })
     }
   }
-  for (let position = 1; position <= 5; position += 1) {
+  for (let position = 1; position <= 30; position += 1) {
     for (const [key, label] of Object.entries(rubricLabels)) {
       definitions.push({ id: `rubric.${position}.${key}`, label: `Rubrik ${position} — ${label}`, step: "assessment", valueType: key === "weight" ? "number" : "string" })
     }
