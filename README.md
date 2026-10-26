@@ -1,4 +1,5 @@
 <p align="center"><img src="src/assets/logo-undip.png" alt="Logo Universitas Diponegoro" width="110"></p>
+<img width="1526" height="720" alt="image" src="https://github.com/user-attachments/assets/2ad479fd-ad35-49a3-9ac5-3089ba088ff9" />
 
 # RPS OBE Studio
 
